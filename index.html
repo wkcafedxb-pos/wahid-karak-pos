@@ -256,6 +256,7 @@ svg.chart .pt{fill:var(--cardamom)}
   .fgrid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
   .tbl-wrap th:first-child,.tbl-wrap td:first-child{position:sticky;left:0;background:var(--surface);z-index:1}
   .tbl-wrap tr.click:hover td:first-child{background:var(--surface-2)}
+  .dlg .tbl-wrap th:first-child,.dlg .tbl-wrap td:first-child{background:var(--bg)}
   td{padding:9px 6px}
   .toast{bottom:calc(138px + env(safe-area-inset-bottom,0px))}
   .denoms{grid-template-columns:repeat(3,1fr)}
@@ -640,6 +641,8 @@ function ownerWa(text){return waHref(S.settings.ownerWa,text)}
 function printText(name,text,size){const pa=$('#printArea');pa.textContent=text;pa.className=size==='receipt'?'receipt':'a4';
   $('#pageStyle').textContent=size==='receipt'?'@page{size:80mm auto;margin:3mm 2mm}':'@page{size:A4;margin:14mm}';
   setTimeout(()=>{try{window.print()}catch(e){toast('Printing is not available on this device.')}},60)}
+function waLink(phone,text){let p=String(phone).replace(/\D/g,'');if(p.startsWith('00'))p=p.slice(2);if(p.startsWith('0'))p='971'+p.slice(1);return 'https://wa.me/'+p+'?text='+encodeURIComponent(text)}
+async function copyText(t){try{await navigator.clipboard.writeText(t);toast('Copied')}catch(e){openModal(`<div class="dlg-h"><h2>Copy this text</h2><button class="btn ghost" data-close>Done</button></div><div class="dlg-b"><textarea id="cpy" style="min-height:240px" class="mono">${esc(t)}</textarea></div>`,d=>{const x=d.querySelector('#cpy');x.focus();x.select()})}}
 function saveFile(name,data){try{const blob=data instanceof Blob?data:new Blob([data],{type:/\.csv$/.test(name)?'text/csv':/\.json$/.test(name)?'application/json':'text/plain'});
   const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},1500);toast('Saved '+name)}catch(e){toast('Could not save the file.')}}
 
