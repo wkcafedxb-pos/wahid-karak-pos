@@ -1,0 +1,690 @@
+{
+ "app": "wahid-karak-pos",
+ "v": 1,
+ "at": "2026-10-28 starter data",
+ "settings": {
+  "addr": "Mina Bazar, Al Fahidi, Dubai, UAE",
+  "expCats": [
+   "Supplies",
+   "Rent",
+   "DEWA",
+   "Salaries",
+   "Gas cylinder",
+   "Internet & phone",
+   "Maintenance",
+   "Licence & fees",
+   "Other"
+  ],
+  "footer": "Shukran! Visit again.",
+  "inclusive": true,
+  "licenseExp": "",
+  "managerPin": "",
+  "mods": [
+   "No sugar",
+   "Less sugar",
+   "Extra sugar",
+   "Strong",
+   "Extra hot",
+   "Parcel"
+  ],
+  "name": "Wahid Karak Cafe LLC",
+  "phone": "",
+  "platforms": [
+   {
+    "comm": 25,
+    "id": "talabat",
+    "name": "Talabat"
+   },
+   {
+    "comm": 28,
+    "id": "deliveroo",
+    "name": "Deliveroo"
+   },
+   {
+    "comm": 25,
+    "id": "careem",
+    "name": "Careem"
+   },
+   {
+    "comm": 22,
+    "id": "noon",
+    "name": "Noon Food"
+   }
+  ],
+  "stampEvery": 10,
+  "tables": 8,
+  "trn": "",
+  "vat": 5,
+  "ownerWa": "",
+  "cover": 7,
+  "autoPrint": false
+ },
+ "menu": {
+  "cats": [
+   {
+    "id": "karak",
+    "name": "Karak & Tea",
+    "stamps": true
+   },
+   {
+    "id": "coffee",
+    "name": "Coffee",
+    "stamps": false
+   },
+   {
+    "id": "snack",
+    "name": "Sandwiches & Paratha",
+    "stamps": false
+   },
+   {
+    "id": "bfast",
+    "name": "Breakfast",
+    "stamps": false
+   },
+   {
+    "id": "juice",
+    "name": "Fresh Juice",
+    "stamps": false
+   },
+   {
+    "id": "cold",
+    "name": "Water & Cold drinks",
+    "stamps": false
+   }
+  ],
+  "items": {
+   "m01": {
+    "active": true,
+    "cat": "karak",
+    "code": "K1",
+    "fav": true,
+    "name": "Karak Chai",
+    "price": 1.5,
+    "recipe": {
+     "card": 0.3,
+     "cup": 1,
+     "milk": 0.04,
+     "sugar": 0.012,
+     "tea": 0.004
+    },
+    "sort": 0
+   },
+   "m02": {
+    "active": true,
+    "cat": "karak",
+    "code": "K2",
+    "fav": true,
+    "name": "Zafran Karak",
+    "price": 2.5,
+    "recipe": {
+     "card": 0.3,
+     "cup": 1,
+     "milk": 0.04,
+     "saff": 0.05,
+     "sugar": 0.012,
+     "tea": 0.004
+    },
+    "sort": 1
+   },
+   "m03": {
+    "active": true,
+    "cat": "karak",
+    "code": "K3",
+    "fav": true,
+    "name": "Ginger Karak",
+    "price": 2,
+    "recipe": {
+     "card": 0.3,
+     "cup": 1,
+     "ging": 0.005,
+     "milk": 0.04,
+     "sugar": 0.012,
+     "tea": 0.004
+    },
+    "sort": 2
+   },
+   "m04": {
+    "active": true,
+    "cat": "karak",
+    "code": "K4",
+    "fav": false,
+    "name": "Karak Large",
+    "price": 3,
+    "recipe": {
+     "card": 0.5,
+     "cup": 1,
+     "milk": 0.07,
+     "sugar": 0.02,
+     "tea": 0.007
+    },
+    "sort": 3
+   },
+   "m05": {
+    "active": true,
+    "cat": "karak",
+    "code": "K5",
+    "fav": false,
+    "name": "Sulaimani",
+    "price": 1,
+    "recipe": {
+     "cup": 1,
+     "lemon": 0.01,
+     "sugar": 0.01,
+     "tea": 0.003
+    },
+    "sort": 4
+   },
+   "m06": {
+    "active": true,
+    "cat": "karak",
+    "code": "K6",
+    "fav": false,
+    "name": "Masala Chai",
+    "price": 2,
+    "recipe": {
+     "card": 0.3,
+     "cup": 1,
+     "ging": 0.004,
+     "milk": 0.04,
+     "sugar": 0.012,
+     "tea": 0.004
+    },
+    "sort": 5
+   },
+   "m07": {
+    "active": true,
+    "cat": "karak",
+    "code": "K7",
+    "fav": false,
+    "name": "Mint Tea",
+    "price": 1.5,
+    "recipe": {
+     "cup": 1,
+     "mint": 0.1,
+     "sugar": 0.01,
+     "tea": 0.003
+    },
+    "sort": 6
+   },
+   "m10": {
+    "active": true,
+    "cat": "coffee",
+    "code": "C1",
+    "fav": true,
+    "name": "Nescafe",
+    "price": 3,
+    "recipe": {
+     "coffee": 0.004,
+     "cup": 1,
+     "milk": 0.05,
+     "sugar": 0.01
+    },
+    "sort": 7
+   },
+   "m11": {
+    "active": true,
+    "cat": "coffee",
+    "code": "C2",
+    "fav": false,
+    "name": "Arabic Qahwa",
+    "price": 2,
+    "recipe": {
+     "card": 0.3,
+     "cup": 1,
+     "qahwa": 0.006
+    },
+    "sort": 8
+   },
+   "m12": {
+    "active": true,
+    "cat": "coffee",
+    "code": "C3",
+    "fav": false,
+    "name": "Cold Coffee",
+    "price": 7,
+    "recipe": {
+     "coffee": 0.006,
+     "fcup": 1,
+     "milk": 0.15,
+     "sugar": 0.02
+    },
+    "sort": 9
+   },
+   "m20": {
+    "active": true,
+    "cat": "snack",
+    "code": "S1",
+    "fav": true,
+    "name": "Chips Oman Paratha",
+    "price": 4,
+    "recipe": {
+     "cheese": 1,
+     "chips": 1,
+     "para": 1
+    },
+    "sort": 10
+   },
+   "m21": {
+    "active": true,
+    "cat": "snack",
+    "code": "S2",
+    "cost": 0,
+    "fav": true,
+    "name": "Egg Paratha",
+    "price": 5,
+    "recipe": {
+     "egg": 2,
+     "para": 1
+    },
+    "sort": 11
+   },
+   "m22": {
+    "active": true,
+    "cat": "snack",
+    "code": "S3",
+    "fav": false,
+    "name": "Cheese Paratha",
+    "price": 5,
+    "recipe": {
+     "cheese": 2,
+     "para": 1
+    },
+    "sort": 12
+   },
+   "m23": {
+    "active": true,
+    "cat": "snack",
+    "code": "S4",
+    "fav": false,
+    "name": "Egg Sandwich",
+    "price": 5,
+    "recipe": {
+     "bread": 2,
+     "egg": 2
+    },
+    "sort": 13
+   },
+   "m24": {
+    "active": true,
+    "cat": "snack",
+    "code": "S5",
+    "fav": true,
+    "name": "Chicken Sandwich",
+    "price": 8,
+    "recipe": {
+     "bread": 2,
+     "chicken": 0.08
+    },
+    "sort": 14
+   },
+   "m25": {
+    "active": true,
+    "cat": "snack",
+    "code": "S6",
+    "fav": false,
+    "name": "Samosa (3 pcs)",
+    "price": 3,
+    "recipe": {
+     "samosa": 3
+    },
+    "sort": 15
+   },
+   "m30": {
+    "active": true,
+    "cat": "bfast",
+    "code": "B1",
+    "fav": false,
+    "name": "Omelette & Paratha",
+    "price": 8,
+    "recipe": {
+     "egg": 3,
+     "para": 2
+    },
+    "sort": 16
+   },
+   "m31": {
+    "active": true,
+    "cat": "bfast",
+    "code": "B2",
+    "fav": false,
+    "name": "Chana & Paratha",
+    "price": 7,
+    "recipe": {
+     "chana": 0.2,
+     "para": 2
+    },
+    "sort": 17
+   },
+   "m40": {
+    "active": true,
+    "cat": "juice",
+    "code": "J1",
+    "cost": 0,
+    "fav": false,
+    "name": "Fresh Orange",
+    "price": 8,
+    "recipe": {
+     "fcup": 1,
+     "orange": 0.5
+    },
+    "sort": 18
+   },
+   "m41": {
+    "active": true,
+    "cat": "juice",
+    "code": "J2",
+    "fav": true,
+    "name": "Lemon Mint",
+    "price": 7,
+    "recipe": {
+     "fcup": 1,
+     "lemon": 0.08,
+     "mint": 0.3,
+     "sugar": 0.03
+    },
+    "sort": 19
+   },
+   "m42": {
+    "active": true,
+    "cat": "juice",
+    "code": "J3",
+    "fav": false,
+    "name": "Mango",
+    "price": 10,
+    "recipe": {
+     "fcup": 1,
+     "mango": 0.2,
+     "milk": 0.05
+    },
+    "sort": 20
+   },
+   "m43": {
+    "active": true,
+    "cat": "juice",
+    "code": "J4",
+    "cost": 0,
+    "fav": false,
+    "name": "Avocado",
+    "price": 12,
+    "recipe": {
+     "avocado": 1,
+     "fcup": 1,
+     "milk": 0.15,
+     "sugar": 0.02
+    },
+    "sort": 21
+   },
+   "m50": {
+    "active": true,
+    "cat": "cold",
+    "code": "W1",
+    "fav": false,
+    "name": "Water 500ml",
+    "price": 1,
+    "recipe": {
+     "water": 1
+    },
+    "sort": 22
+   },
+   "m51": {
+    "active": true,
+    "cat": "cold",
+    "code": "W2",
+    "fav": false,
+    "name": "Laban Up",
+    "price": 2,
+    "recipe": {
+     "laban": 1
+    },
+    "sort": 23
+   },
+   "m52": {
+    "active": true,
+    "cat": "cold",
+    "code": "W3",
+    "fav": false,
+    "name": "Soft Drink Can",
+    "price": 3,
+    "recipe": {
+     "soda": 1
+    },
+    "sort": 24
+   }
+  }
+ },
+ "inv": {
+  "items": {
+   "avocado": {
+    "asOf": 1793207726944,
+    "cost": 2.5,
+    "min": 6,
+    "name": "Avocado",
+    "qty": 20,
+    "unit": "pcs"
+   },
+   "bread": {
+    "asOf": 1793207726944,
+    "cost": 0.35,
+    "min": 20,
+    "name": "Sandwich bread",
+    "qty": 78,
+    "unit": "pcs"
+   },
+   "card": {
+    "asOf": 1793207726944,
+    "cost": 0.18,
+    "min": 100,
+    "name": "Cardamom",
+    "qty": 499.7,
+    "unit": "g"
+   },
+   "chana": {
+    "asOf": 1793207726944,
+    "cost": 6,
+    "min": 2,
+    "name": "Chickpeas (cooked)",
+    "qty": 5,
+    "unit": "kg"
+   },
+   "cheese": {
+    "asOf": 1793207726944,
+    "cost": 0.35,
+    "min": 30,
+    "name": "Cheese slices",
+    "qty": 100,
+    "unit": "pcs"
+   },
+   "chicken": {
+    "asOf": 1793207726944,
+    "cost": 16,
+    "min": 3,
+    "name": "Chicken",
+    "qty": 8,
+    "unit": "kg"
+   },
+   "chips": {
+    "asOf": 1793207726944,
+    "cost": 0.5,
+    "min": 20,
+    "name": "Chips Oman",
+    "qty": 60,
+    "unit": "pcs"
+   },
+   "coffee": {
+    "asOf": 1793207726944,
+    "cost": 85,
+    "min": 0.3,
+    "name": "Nescafe",
+    "qty": 1,
+    "unit": "kg"
+   },
+   "cup": {
+    "asOf": 1793207726944,
+    "cost": 0.12,
+    "min": 200,
+    "name": "Paper cups",
+    "qty": 999,
+    "unit": "pcs"
+   },
+   "egg": {
+    "asOf": 1793207726944,
+    "cost": 0.45,
+    "min": 60,
+    "name": "Eggs",
+    "qty": 178,
+    "unit": "pcs"
+   },
+   "fcup": {
+    "asOf": 1793207726944,
+    "cost": 0.25,
+    "min": 80,
+    "name": "Juice cups",
+    "qty": 299,
+    "unit": "pcs"
+   },
+   "ging": {
+    "asOf": 1793207726944,
+    "cost": 8,
+    "min": 0.5,
+    "name": "Ginger",
+    "qty": 2,
+    "unit": "kg"
+   },
+   "laban": {
+    "asOf": 1793207726944,
+    "cost": 1.1,
+    "min": 12,
+    "name": "Laban Up",
+    "qty": 48,
+    "unit": "pcs"
+   },
+   "lemon": {
+    "asOf": 1793207726944,
+    "cost": 6,
+    "min": 2,
+    "name": "Lemons",
+    "qty": 4.92,
+    "unit": "kg"
+   },
+   "mango": {
+    "asOf": 1793207726944,
+    "cost": 12,
+    "min": 1,
+    "name": "Mango pulp",
+    "qty": 4,
+    "unit": "L"
+   },
+   "milk": {
+    "asOf": 1793207726944,
+    "cost": 9.5,
+    "min": 6,
+    "name": "Evaporated milk",
+    "qty": 23.96,
+    "unit": "L"
+   },
+   "mint": {
+    "asOf": 1793207726944,
+    "cost": 1,
+    "min": 5,
+    "name": "Mint",
+    "qty": 14.7,
+    "unit": "bunch"
+   },
+   "orange": {
+    "asOf": 1793207726944,
+    "cost": 5,
+    "min": 5,
+    "name": "Oranges",
+    "qty": 15,
+    "unit": "kg"
+   },
+   "para": {
+    "asOf": 1793207726944,
+    "cost": 0.6,
+    "min": 30,
+    "name": "Paratha",
+    "qty": 100,
+    "unit": "pcs"
+   },
+   "qahwa": {
+    "asOf": 1793207726944,
+    "cost": 60,
+    "min": 0.3,
+    "name": "Arabic coffee",
+    "qty": 1,
+    "unit": "kg"
+   },
+   "saff": {
+    "asOf": 1793207726944,
+    "cost": 9,
+    "min": 5,
+    "name": "Saffron",
+    "qty": 20,
+    "unit": "g"
+   },
+   "samosa": {
+    "asOf": 1793207726944,
+    "cost": 0.5,
+    "min": 30,
+    "name": "Samosa",
+    "qty": 87,
+    "unit": "pcs"
+   },
+   "soda": {
+    "asOf": 1793207726944,
+    "cost": 1.6,
+    "min": 12,
+    "name": "Soft drink can",
+    "qty": 48,
+    "unit": "pcs"
+   },
+   "sugar": {
+    "asOf": 1793207726944,
+    "cost": 4,
+    "min": 5,
+    "name": "Sugar",
+    "qty": 19.96,
+    "unit": "kg"
+   },
+   "tea": {
+    "asOf": 1793207726944,
+    "cost": 28,
+    "min": 1.5,
+    "name": "Tea leaves (CTC)",
+    "qty": 5,
+    "unit": "kg"
+   },
+   "water": {
+    "asOf": 1793207726944,
+    "cost": 0.4,
+    "min": 24,
+    "name": "Water 500ml",
+    "qty": 96,
+    "unit": "pcs"
+   }
+  }
+ },
+ "staff": {
+  "items": {
+   "s_owner": {
+    "active": true,
+    "name": "Owner",
+    "phone": "",
+    "pin": "",
+    "role": "Owner",
+    "salary": 0,
+    "visaExp": ""
+   }
+  }
+ },
+ "cust": {},
+ "orders": {},
+ "exp": {},
+ "closes": {},
+ "sup": {
+  "items": {}
+ },
+ "pur": {},
+ "mov": {},
+ "po": {}
+}

@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#21180F">
 <title>Wahid Karak POS</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Wahid POS">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>
@@ -209,6 +216,63 @@ svg.chart .pt{fill:var(--cardamom)}
   h1{font-size:1.35rem}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* ---- phone & tablet tuning ---- */
+.btn{color:var(--fg)}a.btn{text-decoration:none}
+.btn.pri{color:var(--on-karak)}.btn.grn{color:var(--bg)}.btn.danger{color:var(--bad)}
+.cart-bd{display:none}
+.banner{cursor:pointer}
+@media (max-width:820px){
+  input,select,textarea{font-size:16px}
+  .banner{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.8rem;padding:6px 10px;margin-bottom:8px}
+  .banner.open{white-space:normal}
+  .topbar{gap:8px;margin-bottom:10px}
+  .topbar h1{flex:1 1 auto}
+  .topbar>.row{flex-wrap:nowrap;overflow-x:auto;max-width:100%;scrollbar-width:none}
+  .seg{overflow-x:auto;max-width:100%;flex-wrap:nowrap;scrollbar-width:none}
+  .seg button{white-space:nowrap;flex:none}
+  .seg.otype{display:grid;grid-template-columns:repeat(4,1fr);width:100%}
+  .seg.otype button{padding:9px 2px;font-size:.78rem}
+  .menu-side{min-width:0}
+  .menu-side>.row{gap:6px}
+  .tiles{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .tile{min-height:80px;padding:9px 9px 8px;border-radius:10px}
+  .tile .n{font-size:.86rem}.tile .p{font-size:.86rem}
+  .tile .dot{top:8px;right:8px;width:7px;height:7px}
+  .qty button{width:38px;height:38px}
+  .cl{padding:10px 14px}
+  .cart-bd{display:block;position:fixed;inset:0;background:rgba(20,12,4,.45);z-index:39}
+  .cart{top:auto;max-height:88%;height:88%}
+  .cart-h::before{content:"";position:absolute;left:50%;top:6px;width:40px;height:4px;margin-left:-20px;border-radius:2px;background:var(--line)}
+  .cart-h{position:relative;padding-top:16px}
+  .kpis{grid-template-columns:1fr 1fr;gap:8px}
+  .kpi{padding:10px 12px}.kpi .v{font-size:1.15rem}
+  .kds{grid-template-columns:1fr;overflow:visible}
+  .kcol{min-height:0}
+  .ov{align-items:end;padding:0}
+  .dlg,.dlg.wide{width:100%;max-height:92%;border-radius:18px 18px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}
+  .dlg-h{padding-top:18px}
+  .dlg-h::before{content:"";position:absolute;left:50%;top:7px;width:40px;height:4px;margin-left:-20px;border-radius:2px;background:var(--line)}
+  .dlg-f .btn{flex:1}
+  .fgrid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+  .tbl-wrap th:first-child,.tbl-wrap td:first-child{position:sticky;left:0;background:var(--surface);z-index:1}
+  .tbl-wrap tr.click:hover td:first-child{background:var(--surface-2)}
+  td{padding:9px 6px}
+  .toast{bottom:calc(138px + env(safe-area-inset-bottom,0px))}
+  .denoms{grid-template-columns:repeat(3,1fr)}
+  .tables{grid-template-columns:repeat(6,1fr)}
+  .tables button{padding:10px 2px}
+  .tl.total{font-size:1.15rem}
+  .receipt{font-size:.72rem;padding:10px}
+  .token{font-size:3rem}
+  .keys button{padding:13px 4px;font-size:1rem}
+  .change{font-size:1.7rem}
+  .panel{padding:14px}
+  .nav span{font-size:.66rem}
+}
+@media (max-width:380px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.seg.otype button{font-size:.72rem}}
+main.fill{display:flex;flex-direction:column}main.fill>.sell{flex:1;min-height:0;height:auto}
+@media (pointer:coarse){.tile:hover{border-color:var(--line)}.cl:hover{background:none}.nav:not(.on):hover{background:none;opacity:.72}.btn:hover{border-color:var(--line)}}
+
 </style>
 
 </head>
@@ -402,9 +466,9 @@ function paint(){
 }
 function modeBanner(){
   let b='';
-  if(S.mode==='local')b+=`<div class="banner"><b>Demo mode.</b> Firebase is not connected yet (fill in firebase-config.js), so everything is saved in this browser only.</div>`;
-  if(S.mode==='readonly')b+=`<div class="banner"><b>Accountant view.</b> You can see sales, VAT, purchases and reports, and print or export them. Nothing can be changed from this account.</div>`;
-  if(S.offline)b+=`<div class="banner" style="background:var(--bad-soft)"><b>No internet.</b> Keep selling: bills are saved on this device and sync when the connection returns.</div>`;
+  if(S.mode==='local')b+=`<div class="banner" data-a="bannerTog" title="Tap to read more"><b>Demo mode.</b> Firebase is not connected yet (fill in firebase-config.js), so everything is saved in this browser only.</div>`;
+  if(S.mode==='readonly')b+=`<div class="banner" data-a="bannerTog" title="Tap to read more"><b>Accountant view.</b> You can see sales, VAT, purchases and reports, and print or export them. Nothing can be changed from this account.</div>`;
+  if(S.offline)b+=`<div class="banner" data-a="bannerTog" title="Tap to read more" style="background:var(--bad-soft)"><b>No internet.</b> Keep selling: bills are saved on this device and sync when the connection returns.</div>`;
   if(b)return b;
   return'';
 }
@@ -436,16 +500,16 @@ RENDER.sell=function(){
   return `<div class="sell">
    <section class="menu-side">
     <div class="row" style="justify-content:space-between">
-      <div class="seg" role="tablist" aria-label="Order type">${Object.entries(TYPES).map(([k,l])=>`<button class="${cart.type===k?'on':''}" data-a="otype" data-v="${k}">${l}</button>`).join('')}</div>
+      <div class="seg otype" role="tablist" aria-label="Order type">${Object.entries(TYPES).map(([k,l])=>`<button class="${cart.type===k?'on':''}" data-a="otype" data-v="${k}">${l}</button>`).join('')}</div>
       <div class="row"><button class="chip" data-a="tickets">Open orders <b class="num">${nT}</b></button><button class="chip" data-a="pickCashier">${icon('staff').replace('<svg','<svg width="16" height="16"')} ${esc(cashier?staffName(cashier):'Choose cashier')}</button></div>
     </div>
     ${typeExtra()}
-    <div class="row" style="flex-wrap:nowrap"><input id="q" type="search" placeholder="Search menu or type item code  ( / )" value="${esc(UI.q)}" autocomplete="off" style="flex:1"></div>
+    <div class="row" style="flex-wrap:nowrap"><input id="q" type="search" placeholder="Search menu or item code" value="${esc(UI.q)}" autocomplete="off" style="flex:1"></div>
     <div class="cats"><button class="chip ${UI.cat==='all'?'on':''}" data-a="cat" data-v="all">All</button>${items.some(i=>i.fav)?`<button class="chip ${UI.cat==='fav'?'on':''}" data-a="cat" data-v="fav">★ Quick</button>`:''}${cats.map(c=>`<button class="chip ${UI.cat===c.id?'on':''}" data-a="cat" data-v="${c.id}">${esc(c.name)}</button>`).join('')}</div>
     <div class="tiles" id="tiles">${tiles||'<div class="empty">Nothing matches that search.</div>'}</div>
     <div class="mbar"><button class="btn pri big" data-a="openCart">${cart.lines.reduce((s,l)=>s+l.q,0)} items · ${aed(calc(cart).total)}</button></div>
    </section>
-   <aside class="cart ${UI.cartOpen?'open':''}" id="cartPane">${cartHtml()}</aside>
+   ${UI.cartOpen?'<div class="cart-bd" data-a="closeCart"></div>':''}<aside class="cart ${UI.cartOpen?'open':''}" id="cartPane">${cartHtml()}</aside>
   </div>`;
 };
 function typeExtra(){
@@ -479,7 +543,7 @@ function afterSell(){const q=$('#q');if(q){q.oninput=()=>{UI.q=q.value;const pos
   q.onkeydown=e=>{if(e.key==='Enter'){const f=$('#tiles .tile');if(f){f.click();UI.q='';paint();$('#q').focus()}}}}
   const ci=$('#carIn');if(ci)ci.onchange=()=>{cart.car=ci.value;saveCart()};}
 function repaintCart(){const p=$('#cartPane');if(p&&UI.view==='sell'){paint()}}
-function addItem(id,opts){const it=S.menu.items[id];if(!it)return;opts=opts||{};
+function addItem(id,opts){const it=S.menu.items[id];if(!it)return;try{navigator.vibrate&&navigator.vibrate(10)}catch(e){}opts=opts||{};
   const m=opts.m||[];const ex=cart.lines.find(l=>l.i===id&&!l.note&&JSON.stringify(l.m||[])===JSON.stringify(m)&&l.p===(opts.p!=null?opts.p:+it.price));
   if(ex)ex.q++;else cart.lines.push({k:uid('l'),i:id,n:it.name,p:opts.p!=null?opts.p:+it.price,q:1,m,note:'',c:itemCost(it),cat:it.cat||''});
   saveCart();repaintCart()}
@@ -506,7 +570,7 @@ function payDialog(){
      <div class="dlg-f"><button class="btn pri big" id="payGo" style="flex:1">Confirm payment</button></div>`,dlg=>{
       dlg.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{method=b.dataset.m;draw()});
       dlg.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='pickCust'){closeModal();pickCustomer(()=>payDialog());return}if(k==='exact')tend=String(t.total);else tend=String((+tend||0)+(+k));draw()});
-      const ti=dlg.querySelector('#tend');if(ti){ti.focus();ti.oninput=()=>{tend=ti.value;const ch=r2((+tend||0)-t.total);const el=dlg.querySelector('.change');el.textContent=tend?(ch<0?'Short '+fmt(-ch):fmt(ch)):'0.00';el.style.color=tend&&ch<0?'var(--bad)':'var(--cardamom)'};ti.onkeydown=e=>{if(e.key==='Enter')dlg.querySelector('#payGo').click()}}
+      const ti=dlg.querySelector('#tend');if(ti){if(!COARSE)ti.focus();ti.oninput=()=>{tend=ti.value;const ch=r2((+tend||0)-t.total);const el=dlg.querySelector('.change');el.textContent=tend?(ch<0?'Short '+fmt(-ch):fmt(ch)):'0.00';el.style.color=tend&&ch<0?'var(--bad)':'var(--cardamom)'};ti.onkeydown=e=>{if(e.key==='Enter')dlg.querySelector('#payGo').click()}}
       dlg.querySelector('#payGo').onclick=async()=>{
         const pay={};let tendered=0,change=0,ref='';
         if(method==='cash'){tendered=tend===''?t.total:+tend;if(tendered<t.total-0.001){toast('Cash received is less than the total.');return}change=r2(tendered-t.total);pay.cash=t.total}
@@ -580,10 +644,11 @@ function saveFile(name,data){try{const blob=data instanceof Blob?data:new Blob([
   const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},1500);toast('Saved '+name)}catch(e){toast('Could not save the file.')}}
 
 /* ---------- modal ---------- */
+const COARSE=!!(window.matchMedia&&matchMedia("(pointer:coarse)").matches);
 function openModal(html,init,wide){const m=$('#modal');m.innerHTML=`<div class="ov" data-ov><div class="dlg ${wide?'wide':''}" role="dialog" aria-modal="true">${html}</div></div>`;
   const dlg=m.querySelector('.dlg');m.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeModal);
   m.querySelector('[data-ov]').addEventListener('mousedown',e=>{if(e.target.hasAttribute('data-ov'))closeModal()});
-  if(init)init(dlg);const f=dlg.querySelector('input:not([type=checkbox]),textarea,select');if(f&&!dlg.querySelector('#tend'))setTimeout(()=>f.focus(),30);}
+  if(init)init(dlg);const f=dlg.querySelector('input:not([type=checkbox]),textarea,select');if(f&&!COARSE&&!dlg.querySelector('#tend'))setTimeout(()=>f.focus(),30);}
 function closeModal(){$('#modal').innerHTML='';if(deferred){deferred=false;paint()}}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal').innerHTML)closeModal();
   if(e.key==='/'&&UI.view==='sell'&&!/INPUT|TEXTAREA/.test(document.activeElement.tagName)&&!$('#modal').innerHTML){e.preventDefault();const q=$('#q');if(q)q.focus()}});
@@ -783,7 +848,7 @@ RENDER.stock=function(){
   const tabs=[['levels','Stock levels'],['reorder','Reorder'],['purchases','Purchases'],['suppliers','Suppliers'],['moves','Movements']];
   const t=UI.rmTab||'levels';
   const head=`<div class="topbar"><h1>Raw materials</h1><div class="row"><button class="btn" data-a="fullCount">Stock count</button><button class="btn" data-a="waste">Record wastage</button><button class="btn pri" data-a="newPur">+ Purchase</button></div></div>
-   <div class="seg" style="margin-bottom:12px;flex-wrap:wrap">${tabs.map(([k,l])=>`<button class="${t===k?'on':''}" data-a="rmTab" data-v="${k}">${l}</button>`).join('')}</div>`;
+   <div class="seg" style="margin-bottom:12px">${tabs.map(([k,l])=>`<button class="${t===k?'on':''}" data-a="rmTab" data-v="${k}">${l}</button>`).join('')}</div>`;
   return head+(RM[t]||RM.levels)();
 };
 const RM={};
@@ -1124,6 +1189,8 @@ RENDER.setup=function(){const s=S.settings;
    <div><button class="btn pri">Save settings</button></div></form>
   <div class="panel stack"><h2>This device</h2><p class="small muted" style="margin:0">If two tills ring at once, give each a letter so token numbers don't clash (A1, B1…).</p>
    <div class="row" style="flex-wrap:nowrap"><input id="devc" maxlength="2" value="${esc(devCode())}" placeholder="Till letter, e.g. A" style="max-width:160px"><button class="btn" data-a="saveDev">Save</button></div>
+   <label class="row small"><input type="checkbox" id="wakeT" ${lsGet('wk_wake',false)?'checked':''}> Keep the screen on (counter tablet or phone)</label>
+   ${INSTALL_HTML()}
    <div class="row"><span class="lbl">Theme</span><div class="seg">${['system','light','dark'].map(t=>`<button class="${(lsGet('wk_theme','system'))===t?'on':''}" data-a="theme" data-v="${t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join('')}</div></div>
    ${S.settings.managerPin?'<div><button class="btn" data-a="lock">Lock manager sections now</button></div>':''}
    ${S.user?`<div class="row"><span class="small muted">Signed in as <b>${esc(S.user.email)}</b> (${esc(S.role)})</span><button class="btn sm" data-a="signOut">Sign out</button></div>`:''}</div>
@@ -1138,6 +1205,8 @@ function teamPanel(){if(!S.role)return '';const canEdit=S.role==='owner';const u
 
 /* ---------- actions ---------- */
 const A={
+  bannerTog:(d,el)=>el.classList.toggle('open'),
+  install:()=>{if(installEvt){installEvt.prompt();installEvt=null;paint()}},
   go:d=>{if($('#modal').innerHTML)closeModal();go(d.v)},
   signOut:()=>{if(AUTH)AUTH.signOut().then(()=>location.reload());},toSignup:()=>{UI.signup=true;paint()},toLogin:()=>{UI.signup=false;paint()},
   forgot:()=>{const e=($('#lgE')||{}).value;if(!e){toast('Type your email first.');return}AUTH.sendPasswordResetEmail(e).then(()=>toast('Password reset email sent'),x=>toast(authMsg(x)))},more:()=>openModal(`<div class="dlg-h"><h2>More</h2><button class="btn ghost" data-close>Close</button></div><div class="dlg-b"><div class="morebox">${VIEWS.filter(v=>!MOBILE_MAIN.includes(v[0])).map(([k,l])=>`<button class="nav" data-a="go" data-v="${k}">${icon(k)}<span>${l}</span></button>`).join('')}</div></div>`),
@@ -1221,6 +1290,15 @@ document.addEventListener('change',e=>{const ru=e.target.dataset&&e.target.datas
     for(const col of ['pur','mov']){const g={};for(const id in (data[col]||{})){const x=Object.assign({},data[col][id]);const doc=x._doc;delete x._doc;(g[doc]=g[doc]||{m:doc,o:{}}).o[id]=x}for(const doc in g)await upsert(col+'/'+doc,{m:doc,o:{}},{o:g[doc].o})}
     for(const k in data.closes)await setDoc('close/'+k,data.closes[k]);toast('Backup restored')})};r.readAsText(file);e.target.value=''});
 
+let wakeLock=null;async function wake(){if(!lsGet('wk_wake',false)||!('wakeLock' in navigator)||wakeLock)return;try{wakeLock=await navigator.wakeLock.request('screen');wakeLock.addEventListener('release',()=>{wakeLock=null})}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')wake()});
+document.addEventListener('pointerdown',()=>{if(!wakeLock)wake()});
+let installEvt=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;if(UI.view==='setup')paint()});
+document.addEventListener('change',e=>{if(e.target.id==='wakeT'){lsSet('wk_wake',e.target.checked);if(e.target.checked)wake();else if(wakeLock){wakeLock.release();wakeLock=null}toast(e.target.checked?'Screen stays on while the app is open':'Screen can sleep again')}});
+const INSTALL_HTML=()=>{const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);const inApp=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+  if(inApp)return '<p class="small muted" style="margin:0">Running as an installed app.</p>';
+  if(installEvt)return '<div><button class="btn pri" data-a="install">Install as app on this device</button></div>';
+  return `<p class="small muted" style="margin:0">Install on the home screen: ${ios?'in Safari tap <b>Share</b> then <b>Add to Home Screen</b>.':'in Chrome open the <b>⋮</b> menu then <b>Install app</b> / <b>Add to Home screen</b>.'}</p>`};
 function applyTheme(){const t=lsGet('wk_theme','system');if(t==='system')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',t)}
 
 /* ---------- boot ---------- */
@@ -1231,7 +1309,7 @@ function FirebaseDB(fs){
   return{fb:true,doc:p=>wd(fs.doc(p)),collection:p=>wq(fs.collection(p))}}
 let AUTH=null,FS=null,started=false;
 function authMsg(e){const c=(e&&e.code)||'';return c.includes('invalid-credential')||c.includes('wrong-password')||c.includes('user-not-found')?'Email or password is not right.':c.includes('email-already-in-use')?'That email already has an account. Sign in instead.':c.includes('weak-password')?'Use at least 6 characters for the password.':c.includes('too-many-requests')?'Too many tries. Wait a few minutes.':c.includes('network')?'No internet connection.':c.includes('operation-not-allowed')?'Email sign-in is not turned on in Firebase (Authentication → Sign-in method).':(e&&e.message)||'Something went wrong.'}
-async function boot(){applyTheme();const h=location.hash.slice(1);if(VIEWS.some(v=>v[0]===h))UI.view=h;paint();
+async function boot(){applyTheme();if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});const h=location.hash.slice(1);if(VIEWS.some(v=>v[0]===h))UI.view=h;paint();
   setInterval(()=>{if(UI.view==='orders'&&UI.kTab==='kitchen'&&!$('#modal').innerHTML)paint()},30000);
   const cfg=window.FIREBASE_CONFIG;
   if(!window.firebase||!cfg||!cfg.apiKey||/YOUR_|PASTE/i.test(cfg.apiKey)){DB=LocalDB();S.mode='local';subscribe();setTimeout(()=>{if(!S.ready){S.ready=true;paint()}},800);return}

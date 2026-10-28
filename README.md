@@ -10,6 +10,7 @@ wahid-karak-pos/
 ├── firestore.rules     who can read/write what           ← you edit the owner email
 ├── firebase.json       only needed if you use the Firebase CLI
 ├── starter-data.json   starter menu, raw materials and settings to import once
+├── manifest.webmanifest, sw.js, icon-*.png   lets phones install it as an app
 └── README.md
 ```
 
@@ -48,7 +49,7 @@ Total time: about 30 minutes. Everything below is free (Firebase "Spark" plan, G
    - Name: `wahid-karak-pos`. Visibility: **Public**. GitHub Pages needs public on the free plan, and your sales data stays in Firebase, not on GitHub.
    - Click **Create repository**.
 3. On the empty repository page, click **uploading an existing file**.
-   - Drag in **`index.html`, `firebase-config.js`, `firestore.rules`, `README.md`**.
+   - Drag in **`index.html`, `firebase-config.js`, `firestore.rules`, `README.md`, `manifest.webmanifest`, `sw.js`, `icon-180.png`, `icon-192.png`, `icon-512.png`**.
    - Leave **`starter-data.json`** out and keep it on your computer. It holds your menu prices, so keep it private.
    - Click **Commit changes**.
 4. Open **Settings → Pages**. Under *Build and deployment*, choose **Source: Deploy from a branch**, **Branch: main**, folder **/(root)**, then **Save**.
@@ -88,6 +89,15 @@ The person's screen opens by itself once a role is set. If a staff member forget
 
 ---
 
+## Install on phones and tablets
+
+The app installs like a normal app, with its own icon, full screen and no browser bar, and it opens even without internet.
+- **Android (Chrome):** open the address, then **⋮ → Install app** (or **Settings → This device → Install as app**).
+- **iPhone/iPad (Safari):** open the address, then **Share → Add to Home Screen**.
+- For a counter tablet, tick **Settings → This device → Keep the screen on**.
+
+On phones, the cart opens as a sheet from the bottom (tap the orange total bar). Pop-up windows open at the bottom too, where your thumb can reach. The keyboard only opens when you tap a box.
+
 ## Printing
 
 - The **Print** buttons open the device's normal print dialog.
@@ -122,7 +132,7 @@ The Firebase Spark plan allows **50,000 reads and 20,000 writes per day**. A bus
 
 ## Updating the app later
 
-To install a new `index.html`, open your GitHub repository, click **Add file → Upload files**, drag in the new file, and click **Commit**. Every device picks it up on the next refresh. Your data in Firebase is not touched.
+To install a new version, open your GitHub repository, click **Add file → Upload files**, drag in the changed files, and click **Commit**. Keep your own `firebase-config.js`; don't overwrite it with the blank one. Every device picks it up on the next refresh. Your data in Firebase is not touched.
 
 ## Alternative: Firebase Hosting instead of GitHub
 
