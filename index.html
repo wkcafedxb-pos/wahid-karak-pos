@@ -138,7 +138,19 @@ tr.click{cursor:pointer}tr.click:hover td{background:var(--surface-2)}
 .tile .p{margin-top:auto;font-family:var(--f-mono);font-weight:600;color:var(--karak)}
 .tile .dot{position:absolute;top:10px;right:10px;width:8px;height:8px;border-radius:50%}
 .tile .inc{position:absolute;bottom:8px;right:10px;background:var(--karak);color:var(--on-karak);border-radius:999px;font-size:.75rem;font-weight:700;padding:1px 7px;font-family:var(--f-mono)}
-.tile.low{opacity:.75}
+.tile .sb{position:static;align-self:flex-start;margin-top:3px;border-radius:999px;font-size:.68rem;font-weight:800;padding:1px 7px;font-family:var(--f-mono);letter-spacing:.02em}
+.tile.st-low{border-color:var(--warn);background:linear-gradient(0deg,var(--warn-soft),var(--surface) 70%)}
+.tile.st-low .sb{background:var(--warn);color:var(--surface)}
+.tile.st-out{border-color:var(--bad);border-style:dashed;background:var(--bad-soft)}
+.tile.st-out .n{color:var(--muted)}.tile.st-out .p{color:var(--muted);text-decoration:line-through}
+.tile.st-out .sb{background:var(--bad);color:var(--surface)}
+.tile.st-sold{border-color:var(--line);border-style:dashed;background:var(--surface-2)}
+.tile.st-sold .n,.tile.st-sold .p{color:var(--muted)}.tile.st-sold .sb{background:var(--muted);color:var(--surface)}
+.chip.warnchip{border-color:var(--warn);color:var(--warn);font-weight:700}
+.chip.warnchip.on{background:var(--warn);border-color:var(--warn);color:var(--surface)}
+.cl .sw{font-size:.74rem;font-weight:700;color:var(--bad)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.74rem;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
 .cart{background:var(--surface);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
 .cart-h{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .cart-lines{flex:1;overflow-y:auto;padding:4px 0}
@@ -377,7 +389,7 @@ function subscribe(){
   const onErr=e=>{console.warn(e);if(e&&e.code==='revoked'){S.mode='readonly';paint()}};
   DB.doc('cfg/settings').onSnapshot(s=>{S.settings=Object.assign(clone(DEF_SETTINGS),s.data()||{});S.loaded.settings=1;changed()},onErr);
   DB.doc('cfg/menu').onSnapshot(s=>{const d=s.data()||{};S.menu={cats:d.cats||[],items:d.items||{}};S.loaded.menu=1;changed()},onErr);
-  DB.doc('cfg/inv').onSnapshot(s=>{const d=s.data()||{};S.inv={items:d.items||{}};S.loaded.inv=1;changed()},onErr);
+  DB.doc('cfg/inv').onSnapshot(s=>{const d=s.data()||{};S.inv={items:d.items||{},soldOut:d.soldOut||{}};S.loaded.inv=1;changed()},onErr);
   DB.doc('cfg/staff').onSnapshot(s=>{const d=s.data()||{};S.staff={items:d.items||{}};changed()},onErr);
   DB.collection('cust').onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.cust=m;changed()},onErr);
   DB.collection('tickets').onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.tickets=m;changed()},onErr);
@@ -486,6 +498,27 @@ window.addEventListener('hashchange',()=>{const h=location.hash.slice(1);if(h&&h
 
 /* ---------- SELL ---------- */
 const RENDER={};
+const LOW_SERV=10;
+function itemStock(it,stock,inCartQ){const id=it.id;const so=(S.inv.soldOut||{})[id];if(so===today())return{state:'sold',left:0,lim:null};
+  const rc=it.recipe||{};let left=null,lim=null;
+  for(const k in rc){const q=+rc[k]||0;const v=S.inv.items[k];if(q<=0||!v||v.del)continue;const n=Math.floor(Math.max(0,stock[k]||0)/q+1e-9);if(left===null||n<left){left=n;lim=k}}
+  if(left===null)return{state:'ok',left:null,lim:null};
+  left=Math.max(0,left-(inCartQ||0));
+  if(left<=0)return{state:'out',left:0,lim};
+  const ingLow=Object.keys(rc).some(k=>+rc[k]>0&&S.inv.items[k]&&!S.inv.items[k].del&&stockState(S.inv.items[k],stock[k])!=='ok');
+  if(left<=LOW_SERV||ingLow)return{state:'low',left,lim};
+  return{state:'ok',left,lim}}
+function setSoldOut(id,on){return upsert('cfg/inv',{items:{}},{soldOut:{[id]:on?today():''}}).then(()=>toast(on?'Marked sold out for today':'Back on sale'),fail)}
+function stockWarn(id,proceed){const it=Object.assign({id},S.menu.items[id]);const st=stockNow();const inC=cart.lines.filter(l=>l.i===id).reduce((a,l)=>a+l.q,0);const x=itemStock(it,st,inC);
+  if(x.state!=='out'&&x.state!=='sold'){proceed();const after=itemStock(it,st,inC+1);if(after.left!==null&&after.left<=3)toast(after.left?`Only ${after.left} more ${it.name} can be made`:`That was the last ${it.name}`);return}
+  const v=x.lim&&S.inv.items[x.lim];
+  openModal(`<div class="dlg-h"><h2>${x.state==='sold'?'Sold out today':'Out of stock'}</h2><button class="btn ghost" data-close>Cancel</button></div>
+   <div class="dlg-b"><div class="banner" style="background:var(--${x.state==='sold'?'surface-2':'bad-soft'});cursor:default;white-space:normal"><b>${esc(it.name)}</b> ${x.state==='sold'?'was marked sold out for today.':`can't be made: ${esc(v?v.name:'an ingredient')} shows ${fmt(Math.max(0,st[x.lim]||0))} ${esc(v?v.unit:'')} left.`}</div>
+   <p class="small muted" style="margin:0">${x.state==='sold'?'Put it back on sale if you have it again.':'If the stock is really there, a delivery was probably not recorded. You can still sell it.'}</p></div>
+   <div class="dlg-f">${x.state==='sold'?'<button class="btn" id="swBack">Back on sale</button>':(v?'<button class="btn" id="swRecv">Record delivery</button>':'')}<button class="btn pri" id="swGo">Sell anyway</button></div>`,d=>{
+    d.querySelector('#swGo').onclick=()=>{closeModal();proceed()};
+    const bk=d.querySelector('#swBack');if(bk)bk.onclick=()=>{closeModal();setSoldOut(id,false)};
+    const rv=d.querySelector('#swRecv');if(rv)rv.onclick=()=>{closeModal();purForm({lines:[{i:x.lim}],sup:v.sup})}})}
 RENDER.sell=function(){
   const items=menuItems().filter(i=>i.active!==false);
   const stock=stockNow();
@@ -493,10 +526,14 @@ RENDER.sell=function(){
   const q=UI.q.trim().toLowerCase();
   if(!items.length)return `<div class="empty" style="margin-top:10vh"><b>No menu items yet</b>Add your karak, snacks and juices in <a href="#menu">Menu</a>, then come back to ring sales.</div>`;
   const inCart={};cart.lines.forEach(l=>inCart[l.i]=(inCart[l.i]||0)+l.q);
-  const shown=items.filter(i=>(UI.cat==='all'||(UI.cat==='fav'?i.fav:i.cat===UI.cat))&&(!q||i.name.toLowerCase().includes(q)||(i.code||'').toLowerCase()===q));
-  const lowSet=new Set(invItems().filter(v=>stockState(v,stock[v.id])!=='ok').map(v=>v.id));
-  const tiles=shown.map(i=>{const ci=cats.findIndex(c=>c.id===i.cat);const low=Object.keys(i.recipe||{}).some(k=>lowSet.has(k));
-    return `<button class="tile ${low?'low':''}" data-a="add" data-id="${i.id}" title="${low?'An ingredient is low in stock':''}"><span class="dot" style="background:${CAT_COLORS[(ci<0?0:ci)%CAT_COLORS.length]}"></span><span class="n">${esc(i.name)}</span><span class="p">${fmt(i.price)}</span>${inCart[i.id]?`<span class="inc">×${inCart[i.id]}</span>`:''}</button>`}).join('');
+  const stx={};items.forEach(i=>stx[i.id]=itemStock(i,stock,inCart[i.id]||0));
+  const nLow=items.filter(i=>stx[i.id].state==='low').length,nOut=items.filter(i=>stx[i.id].state==='out'||stx[i.id].state==='sold').length;
+  if(UI.cat==='low'&&!nLow&&!nOut)UI.cat='all';
+  const shown=items.filter(i=>(UI.cat==='all'||(UI.cat==='fav'?i.fav:UI.cat==='low'?stx[i.id].state!=='ok':i.cat===UI.cat))&&(!q||i.name.toLowerCase().includes(q)||(i.code||'').toLowerCase()===q));
+  const tiles=shown.map(i=>{const ci=cats.findIndex(c=>c.id===i.cat);const x=stx[i.id];const lv=x.lim&&S.inv.items[x.lim];
+    const badge=x.state==='low'?`<span class="sb">${x.left} left</span>`:x.state==='out'?'<span class="sb">Out</span>':x.state==='sold'?'<span class="sb">Sold out</span>':'';
+    const tip=x.state==='low'?`About ${x.left} more can be made${lv?' ('+lv.name+' is low)':''}`:x.state==='out'?`${lv?lv.name:'An ingredient'} has run out`:x.state==='sold'?'Marked sold out for today':'';
+    return `<button class="tile ${x.state!=='ok'?'st-'+x.state:''}" data-a="add" data-id="${i.id}" title="${esc(tip)}" aria-label="${esc(i.name+' '+fmt(i.price)+(tip?'. '+tip:''))}"><span class="dot" style="background:${CAT_COLORS[(ci<0?0:ci)%CAT_COLORS.length]}"></span><span class="n">${esc(i.name)}</span>${badge}<span class="p">${fmt(i.price)}</span>${inCart[i.id]?`<span class="inc">×${inCart[i.id]}</span>`:''}</button>`}).join('');
   const nT=Object.keys(S.tickets).length;
   return `<div class="sell">
    <section class="menu-side">
@@ -506,7 +543,8 @@ RENDER.sell=function(){
     </div>
     ${typeExtra()}
     <div class="row" style="flex-wrap:nowrap"><input id="q" type="search" placeholder="Search menu or item code" value="${esc(UI.q)}" autocomplete="off" style="flex:1"></div>
-    <div class="cats"><button class="chip ${UI.cat==='all'?'on':''}" data-a="cat" data-v="all">All</button>${items.some(i=>i.fav)?`<button class="chip ${UI.cat==='fav'?'on':''}" data-a="cat" data-v="fav">★ Quick</button>`:''}${cats.map(c=>`<button class="chip ${UI.cat===c.id?'on':''}" data-a="cat" data-v="${c.id}">${esc(c.name)}</button>`).join('')}</div>
+    <div class="cats"><button class="chip ${UI.cat==='all'?'on':''}" data-a="cat" data-v="all">All</button>${nLow||nOut?`<button class="chip warnchip ${UI.cat==='low'?'on':''}" data-a="cat" data-v="low" title="Items that are low or out of stock">⚠ ${[nOut?nOut+' out':'',nLow?nLow+' low':''].filter(Boolean).join(' · ')}</button>`:''}${items.some(i=>i.fav)?`<button class="chip ${UI.cat==='fav'?'on':''}" data-a="cat" data-v="fav">★ Quick</button>`:''}${cats.map(c=>`<button class="chip ${UI.cat===c.id?'on':''}" data-a="cat" data-v="${c.id}">${esc(c.name)}</button>`).join('')}</div>
+    ${UI.cat==='low'?`<div class="legend"><span><i style="background:var(--warn)"></i>Low: a few left</span><span><i style="background:var(--bad)"></i>Out of stock</span><span><i style="background:var(--muted)"></i>Sold out today</span><a href="#stock" style="margin-left:auto;color:var(--karak);font-weight:600">Open materials</a></div>`:''}
     <div class="tiles" id="tiles">${tiles||'<div class="empty">Nothing matches that search.</div>'}</div>
     <div class="mbar"><button class="btn pri big" data-a="openCart">${cart.lines.reduce((s,l)=>s+l.q,0)} items · ${aed(calc(cart).total)}</button></div>
    </section>
@@ -523,7 +561,7 @@ function typeExtra(){
 }
 function cartHtml(){
   const t=calc(cart);const c=cart.cust&&S.cust[cart.cust];
-  const lines=cart.lines.map((l,ix)=>`<div class="cl" data-a="editLine" data-ix="${ix}"><div><div class="nm">${esc(l.n)}</div>${(l.m&&l.m.length)||l.note?`<div class="md">${esc((l.m||[]).concat(l.note?[l.note]:[]).join(' · '))}</div>`:''}<div class="small muted num">${fmt(l.p)} each</div></div>
+  const lines=cart.lines.map((l,ix)=>`<div class="cl" data-a="editLine" data-ix="${ix}"><div><div class="nm">${esc(l.n)}</div>${(()=>{const it=S.menu.items[l.i];if(!it||l.free)return'';const tot=cart.lines.filter(z=>z.i===l.i).reduce((a,z)=>a+z.q,0);const x=itemStock(Object.assign({id:l.i},it),stockNow(),0);return x.state==='sold'?'<div class="sw">⚠ Marked sold out today</div>':x.left!==null&&tot>x.left?`<div class="sw">⚠ ${x.left?`Stock is enough for only ${x.left}`:'Out of stock'}</div>`:''})()}${(l.m&&l.m.length)||l.note?`<div class="md">${esc((l.m||[]).concat(l.note?[l.note]:[]).join(' · '))}</div>`:''}<div class="small muted num">${fmt(l.p)} each</div></div>
     <div class="qty"><button data-a="q-" data-ix="${ix}" aria-label="Less">−</button><span>${l.q}</span><button data-a="q+" data-ix="${ix}" aria-label="More">+</button></div>
     <div class="num" style="min-width:58px;text-align:right;font-weight:600">${fmt(l.p*l.q)}</div></div>`).join('');
   let st='';if(c){const b=custBal(c);const ev=+S.settings.stampEvery||0;st=`<span class="pill p-ok">${b.stamps} stamps</span>${b.bal>0?`<span class="pill p-warn">owes ${fmt(b.bal)}</span>`:''}${ev&&b.stamps>=ev?`<button class="btn sm grn" data-a="redeem">Give free karak</button>`:''}`}
@@ -670,7 +708,8 @@ function editLine(ix){const l=cart.lines[ix];if(!l)return;let m=(l.m||[]).slice(
    <div class="dlg-b"><div><div class="lbl" style="margin-bottom:6px">Options</div><div class="row">${(S.settings.mods||[]).map(x=>`<button class="chip ${m.includes(x)?'on':''}" data-mod="${esc(x)}">${esc(x)}</button>`).join('')}</div></div>
    <label class="field"><span class="lbl">Note for kitchen</span><input id="ln" value="${esc(l.note||'')}" placeholder="e.g. half cup, no ice"></label>
    <div class="fgrid"><label class="field"><span class="lbl">Quantity</span><input id="lq" type="number" min="1" value="${l.q}"></label><label class="field"><span class="lbl">Unit price (AED)</span><input id="lp" type="number" step="0.25" min="0" value="${l.p}"></label></div></div>
-   <div class="dlg-f"><button class="btn danger" id="rm">Remove item</button><button class="btn pri" id="sv">Save</button></div>`,d=>{
+   <div class="dlg-f"><button class="btn ghost" id="so">${(S.inv.soldOut||{})[l.i]===today()?'Back on sale':'Mark sold out today'}</button><button class="btn danger" id="rm">Remove item</button><button class="btn pri" id="sv">Save</button></div>`,d=>{
+    d.querySelector('#so').onclick=()=>{const on=(S.inv.soldOut||{})[l.i]!==today();if(on){cart.lines.splice(ix,1);saveCart()}closeModal();setSoldOut(l.i,on);repaintCart()};
     d.querySelectorAll('[data-mod]').forEach(b=>b.onclick=()=>{const x=b.dataset.mod;m=m.includes(x)?m.filter(y=>y!==x):m.concat([x]);b.classList.toggle('on')});
     d.querySelector('#rm').onclick=()=>{cart.lines.splice(ix,1);saveCart();closeModal();repaintCart()};
     d.querySelector('#sv').onclick=()=>{const np=+d.querySelector('#lp').value;if(np!==l.p&&!isManagerUnlocked()&&np<l.p){toast('Lowering a price needs the manager PIN.');return}
@@ -1226,7 +1265,7 @@ const A={
   table:d=>{const busy=Object.values(S.tickets).find(t=>t.table===d.v&&t.id!==cart.ticket);if(busy){if(cart.lines.length&&!cart.ticket){toast(d.v+' has an open bill. Hold this order first.');return}recallTicket(busy.id);return}cart.table=d.v;saveCart();paint()},
   plat:d=>{cart.plat=d.v;saveCart();paint()},
   cat:d=>{UI.cat=d.v;paint()},
-  add:d=>addItem(d.id),
+  add:d=>stockWarn(d.id,()=>addItem(d.id)),
   'q+':d=>{cart.lines[+d.ix].q++;saveCart();repaintCart()},
   'q-':d=>{const l=cart.lines[+d.ix];l.q--;if(l.q<=0)cart.lines.splice(+d.ix,1);saveCart();repaintCart()},
   editLine:d=>editLine(+d.ix),
