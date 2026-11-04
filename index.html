@@ -67,7 +67,7 @@ h3{font-size:1rem;font-weight:600}
 :focus-visible{outline:2px solid var(--karak);outline-offset:2px}
 
 .app{display:grid;grid-template-columns:88px 1fr;height:100%}
-.rail{background:var(--fg);color:var(--bg);display:flex;flex-direction:column;align-items:stretch;gap:2px;padding:12px 8px;padding-left:max(8px,env(safe-area-inset-left,0px));overflow-y:auto}
+.rail{background:#21180F;color:#F1EEE9;display:flex;flex-direction:column;align-items:stretch;gap:2px;padding:12px 8px;padding-left:max(8px,env(safe-area-inset-left,0px));overflow-y:auto}
 .brand{display:grid;place-items:center;padding:4px 0 12px}
 .brand b{font-family:var(--f-display);font-weight:800;font-size:1.05rem;line-height:1;color:var(--saffron);text-align:center}
 .brand span{font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;opacity:.7}
@@ -375,14 +375,14 @@ function queued(path,fn){const p=(wq[path]||Promise.resolve()).then(fn,fn);wq[pa
 const RO=()=>Promise.reject({message:'you have view-only access'});
 async function upsert(path,base,patch){if(S.mode==='readonly')return RO();return queued(path,async()=>{
   const ref=DB.doc(path);
-  if(DB.fb){const b={};for(const k in base)if(base[k]==null||typeof base[k]!=='object')b[k]=base[k];return ref.update(deepMerge(b,patch))}
+  if(DB.fb){const b={};for(const k in base)if(base[k]==null||typeof base[k]!=='object')b[k]=base[k];return ref.mergeSet(deepMerge(b,patch))}
   try{await ref.update(patch)}catch(e){
     if(e&&e.code==='invalid_argument'){const s=await ref.get();if(!s.exists){await ref.set(deepMerge(clone(base),patch));return}}
     if(e&&e.code==='unavailable'){await new Promise(r=>setTimeout(r,400+Math.random()*600));return ref.update(patch)}
     throw e}})}
 function setDoc(path,data){if(S.mode==='readonly')return RO();return queued(path,()=>DB.doc(path).set(data))}
 function delDoc(path){if(S.mode==='readonly')return RO();return queued(path,()=>DB.doc(path).delete())}
-function fail(e){console.error(e);toast(e&&e.code==='quota_exceeded'?'Storage is full. Export a backup and remove old records.':'Could not save: '+((e&&e.message)||'try again'))}
+function fail(e){console.error(e);if(e&&(e.code==='permission-denied'||/insufficient permissions/i.test(e.message||''))){toast("Your account can't change this. Ask the owner or a manager.");return}toast(e&&e.code==='quota_exceeded'?'Storage is full. Export a backup and remove old records.':'Could not save: '+((e&&e.message)||'try again'))}
 
 /* ---------- subscriptions ---------- */
 function subscribe(){
@@ -457,6 +457,7 @@ const VIEWS=[['sell','Sell'],['orders','Orders'],['today','Today'],['customers',
 const MOBILE_MAIN=['sell','orders','today','customers'];
 const LOCKED=new Set(['menu','close','reports','staff','setup','expenses']);
 const RO_OK=new Set(['reports','expenses','close','menu']);
+const STAFF_OK=new Set(['expenses','close']);
 
 /* ---------- shell ---------- */
 function paintRail(){
@@ -473,7 +474,7 @@ function paint(){
   if(S.auth==='pending'){v.className='';v.innerHTML=pendingHtml();return}
   v.className=UI.view==='sell'?'fill':'';
   if(!S.ready){v.innerHTML=`<div class="empty" style="margin-top:20vh"><b>Opening the till…</b>Connecting to your cafe's records.</div>`;return}
-  if(LOCKED.has(UI.view)&&!isManagerUnlocked()&&!(S.mode==='readonly'&&RO_OK.has(UI.view))){v.innerHTML=lockScreen();return}
+  if(LOCKED.has(UI.view)&&!isManagerUnlocked()&&!(S.mode==='readonly'&&RO_OK.has(UI.view))&&!(S.role==='staff'&&STAFF_OK.has(UI.view))){v.innerHTML=lockScreen();return}
   const fn=RENDER[UI.view]||RENDER.sell;v.innerHTML=modeBanner()+fn();
   if(UI.view==='sell')afterSell();
 }
@@ -773,7 +774,7 @@ function viewOrder(id){const o=S.orders[id];if(!o)return;
   openModal(`<div class="dlg-h"><h2>Bill ${esc(o.no)}</h2><button class="btn ghost" data-close>Close</button></div><div class="dlg-b"><div class="receipt">${esc(receiptText(o))}</div>
    <div class="row"><button class="btn pri" data-k="print">Print</button><button class="btn" data-k="copy">Copy</button><a class="btn grn" target="_blank" rel="noopener" href="${waHref(o.cust&&S.cust[o.cust]&&S.cust[o.cust].phone,receiptText(o))}">WhatsApp</a>${o.void?'':'<button class="btn danger" data-k="void">Void bill</button>'}</div></div>`,d=>{
     d.querySelector('[data-k=copy]').onclick=()=>copyText(receiptText(o));d.querySelector('[data-k=print]').onclick=()=>printText(`receipt-${o.date}-${o.no}.pdf`,receiptText(o),'receipt');
-    const v=d.querySelector('[data-k=void]');if(v)v.onclick=()=>{if(!isManagerUnlocked()){closeModal();toast('Voiding needs the manager PIN. Unlock in Reports first.');return}
+    const v=d.querySelector('[data-k=void]');if(v)v.onclick=()=>{if(!isManagerUnlocked()){closeModal();toast(S.role&&!S.settings.managerPin?'Only a manager or the owner can void a bill.':'Voiding needs the manager PIN. Open Reports and unlock with the PIN first.');return}
       openModal(`<div class="dlg-h"><h2>Void bill ${esc(o.no)}?</h2></div><div class="dlg-b"><p>The bill stays in history marked void and drops out of sales, stock and VAT. Refund ${aed(o.total)} to the customer yourself.</p><label class="field"><span class="lbl">Reason</span><input id="vr" placeholder="e.g. wrong item, customer left"></label></div><div class="dlg-f"><button class="btn" data-close>Keep bill</button><button class="btn pri" id="vg">Void bill</button></div>`,dd=>{
         dd.querySelector('#vg').onclick=async()=>{const reason=dd.querySelector('#vr').value.trim();if(!reason){toast('Write a reason.');return}
           try{await upsert('orders/'+o._doc,{},{o:{[o.id]:{void:{reason,by:cashier,ts:Date.now()},status:'done'}}});
@@ -1354,12 +1355,15 @@ function applyTheme(){const t=lsGet('wk_theme','system');if(t==='system')documen
 
 /* ---------- boot ---------- */
 function FirebaseDB(fs){
-  const soon=p=>Promise.race([p,new Promise(r=>setTimeout(r,2500))]); // offline: writes are queued locally, don't block the till
-  const wd=r=>({id:r.id,path:r.path,get:()=>r.get(),set:d=>soon(r.set(d)),update:d=>soon(r.set(d,{merge:true})),delete:()=>soon(r.delete()),onSnapshot:(n,e)=>r.onSnapshot(n,e),collection:c=>wq(r.collection(c))});
+  // offline: writes are queued on the device, so don't block the till; a rejection that arrives later is still shown
+  const soon=p=>{let late=false;p.catch(e=>{if(late)fail(e)});return Promise.race([p,new Promise(r=>setTimeout(()=>{late=true;r()},2500))])};
+  const wd=r=>({id:r.id,path:r.path,get:()=>r.get(),set:d=>soon(r.set(d)),update:d=>soon(r.update(d)),mergeSet:d=>soon(r.set(d,{merge:true})),delete:()=>soon(r.delete()),onSnapshot:(n,e)=>r.onSnapshot(n,e),collection:c=>wq(r.collection(c))});
   const wq=q=>({where:(f,o,v)=>wq(q.where(f,o,v)),orderBy:(f,d)=>wq(q.orderBy(f,d)),limit:n=>wq(q.limit(n)),get:()=>q.get(),onSnapshot:(n,e)=>q.onSnapshot(n,e),doc:id=>wd(id?q.doc(id):q.doc()),add:d=>q.add(d)});
   return{fb:true,doc:p=>wd(fs.doc(p)),collection:p=>wq(fs.collection(p))}}
 let AUTH=null,FS=null,started=false;
 function authMsg(e){const c=(e&&e.code)||'';return c.includes('invalid-credential')||c.includes('wrong-password')||c.includes('user-not-found')?'Email or password is not right.':c.includes('email-already-in-use')?'That email already has an account. Sign in instead.':c.includes('weak-password')?'Use at least 6 characters for the password.':c.includes('too-many-requests')?'Too many tries. Wait a few minutes.':c.includes('network')?'No internet connection.':c.includes('operation-not-allowed')?'Email sign-in is not turned on in Firebase (Authentication → Sign-in method).':(e&&e.message)||'Something went wrong.'}
+setInterval(()=>{const d=new Date();const key=dkey(d);if(d.getHours()===4&&BOOT_DAY!==key&&!cart.lines.length&&!$('#modal').innerHTML&&!/INPUT|TEXTAREA|SELECT/.test((document.activeElement||{}).tagName||''))location.reload()},5*60000);
+const BOOT_DAY=dkey(new Date());
 async function boot(){applyTheme();if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});const h=location.hash.slice(1);if(VIEWS.some(v=>v[0]===h))UI.view=h;paint();
   setInterval(()=>{if(UI.view==='orders'&&UI.kTab==='kitchen'&&!$('#modal').innerHTML)paint()},30000);
   const cfg=window.FIREBASE_CONFIG;
@@ -1375,6 +1379,7 @@ async function boot(){applyTheme();if('serviceWorker' in navigator&&location.pro
     try{const snap=await ref.get();if(!snap.exists)await ref.set({email:u.email,role:isOwnerEmail?'owner':'pending',ts:Date.now()});else if(isOwnerEmail&&snap.data().role!=='owner')await ref.set({role:'owner'},{merge:true})}catch(e){console.warn(e)}
     ref.onSnapshot(s=>{const r=(s.data()||{}).role||'pending';
       if(started&&r!==S.role){location.reload();return}
+      if(started)return;
       S.role=r;
       if(r==='pending'||r==='disabled'||!['owner','manager','staff','accountant'].includes(r)){S.auth='pending';paint();return}
       S.auth='in';started=true;S.mode=r==='accountant'?'readonly':'cloud';
