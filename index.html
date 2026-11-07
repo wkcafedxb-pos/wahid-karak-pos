@@ -647,7 +647,7 @@ async function finalize(pay,tendered,change,ref){
   const t=calc(cart);const ts=Date.now();const date=dkey(ts);const tk=cart.ticket&&S.tickets[cart.ticket];
   const o={id:uid('o'),no:tokNo,ts,date,dev:DEV,type:cart.type,table:cart.table||'',car:cart.car||'',plat:cart.type==='deliv'?cart.plat:'',cust:cart.cust||'',
     lines:cart.lines.map(l=>({i:l.i,n:l.n,p:l.p,q:l.q,m:l.m||[],note:l.note||'',c:l.c||0,cat:l.cat||''})),
-    sub:t.sub,disc:t.disc,net:t.net,vat:t.vat,total:t.total,pay,tendered,change,ref,by:cashier||'',status:tk&&tk.status?tk.status:'new',note:cart.note||''};
+    sub:t.sub,disc:t.disc,net:t.net,vat:t.vat,total:t.total,pay,tendered,change,ref,by:cashier||'',status:tk&&tk.status?(tk.web&&tk.status==='ready'?'done':tk.status):'new',note:cart.note||''};
   const shard=Math.floor(new Date(ts).getHours()/6);
   const path=`orders/${date}_${DEV}_${shard}`;
   await upsert(path,{date,dev:DEV,o:{}},{o:{[o.id]:o}});
@@ -658,7 +658,7 @@ async function finalize(pay,tendered,change,ref){
     if(n)patch[uid('t')]={t:'stamp',n,ts,ref:o.no};
     const red=o.lines.filter(l=>l.free).length;
     if(Object.keys(patch).length)upsert('cust/'+o.cust,{tx:{}},{tx:patch}).catch(fail)}
-  if(tk&&tk.web)upsert('weborders/'+tk.web,{},{status:'done',token:o.no,total:o.total,doneTs:Date.now()}).catch(()=>{});
+  if(tk&&tk.web)upsert('weborders/'+tk.web,{},{status:'done',token:o.no,total:o.total,doneTs:Date.now(),paidBy:Object.keys(o.pay).join('+'),receipt:receiptText(o).slice(0,8000)}).catch(()=>{});
   if(cart.ticket)delDoc('tickets/'+cart.ticket).catch(()=>{});
   cart=newCart();saveCart();UI.cartOpen=false;paint();
   return o;
@@ -958,10 +958,10 @@ function printStatement(D){const st=S.settings,c=D.c;
   printDoc('statement',html)}
 
 /* ---------- ONLINE ORDERS (registered customers only) ---------- */
-const WEB_ACTIVE=['new','accepted','preparing','ready'];
+const WEB_ACTIVE=['new','accepted','preparing','ready','delivered'];
 const WTYPE={delivery:'Delivery',pickup:'Pickup',car:'Car service'};
 const WPAY={cash:'Cash on delivery',card:'Card on delivery',khata:'Khata (credit)'};
-const WSTAT={new:'Waiting',accepted:'Accepted',preparing:'Preparing',ready:'Ready / on the way'};
+const WSTAT={new:'Waiting',accepted:'Accepted',preparing:'Preparing',ready:'Ready / on the way',delivered:'Delivered · not paid yet'};
 const webList=()=>Object.values(S.web||{}).sort((a,b)=>a.ts-b.ts);
 const webNew=()=>webList().filter(w=>w.status==='new');
 function orderLink(key){return location.origin+location.pathname.replace(/[^/]*$/,'')+'order.html#k='+key}
@@ -989,7 +989,9 @@ function webHtml(){const st=S.settings;const list=webList();const nw=list.filter
      <ul class="small">${(w.lines||[]).map(l=>`<li><b>${+l.q||1}×</b> ${esc(l.n)}${l.m&&l.m.length?` <i style="color:var(--cardamom)">${esc(l.m.join(', '))}</i>`:''}</li>`).join('')}</ul>
      ${w.note?`<div class="small">Note: ${esc(w.note)}</div>`:''}
      <div class="row" style="justify-content:space-between"><span class="small">${esc(WPAY[w.pay]||w.pay||'')}</span><b class="num">${aed(webEst(w))}</b></div>
-     ${isNew&&S.mode!=='readonly'?`<div class="row"><button class="btn pri" style="flex:1" data-a="webAccept" data-id="${w.id}">Accept</button><button class="btn" data-a="webDecline" data-id="${w.id}">Decline</button></div>`:''}</div>`};
+     ${w.rider&&!isNew?`<div class="small">Delivery by <b>${esc(w.rider)}</b></div>`:''}
+     ${isNew&&S.mode!=='readonly'?`<div class="row"><button class="btn pri" style="flex:1" data-a="webAccept" data-id="${w.id}">Accept</button><button class="btn" data-a="webDecline" data-id="${w.id}">Decline</button></div>`:''}
+     ${!isNew&&S.mode!=='readonly'?webActions(w,c):''}</div>`};
   return `<div class="row" style="margin-bottom:12px;justify-content:space-between"><span class="small">${state}</span>${st.webOn&&S.mode!=='readonly'?`<button class="btn ${S.webPaused?'pri':''}" data-a="webPause">${S.webPaused?'Resume online orders':'Pause online orders'}</button>`:''}</div>
    <h2 style="margin:4px 0 8px">New (${nw.length})</h2>${nw.length?`<div class="wgrid">${nw.map(card).join('')}</div>`:'<div class="empty">No new online orders. New ones appear here with a sound.</div>'}
    <h2 style="margin:16px 0 8px">In progress (${act.length})</h2>${act.length?`<div class="wgrid">${act.map(card).join('')}</div>
@@ -1007,13 +1009,50 @@ async function webAccept(id){const w=S.web[id];if(!w)return;
   const tid=uid('t');const now=Date.now();
   const ticket={id:tid,lines,type,table:'',car:w.type==='car'?String(w.car||'').slice(0,60):'',plat:type==='deliv'?'own':'',cust:c?w.cust:'',disc:null,note,ts:now,by:cashier||'',no:'W'+(mx+1),sent:true,status:'new',sentTs:now,
     web:id,webPay:w.pay||'cash',webName:(c&&c.name)||w.custName||'',webPhone:(c&&c.phone)||w.phone||'',address:w.type==='delivery'?String(w.address||'').slice(0,200):''};
-  try{await setDoc('tickets/'+tid,clone(ticket));await upsert('weborders/'+id,{},{status:'accepted',ticket:tid,ticketNo:ticket.no,acceptedTs:now,by:cashier||'',missing});
+  const bt=calc({lines,disc:null});try{await setDoc('tickets/'+tid,clone(ticket));await upsert('weborders/'+id,{},{status:'accepted',ticket:tid,ticketNo:ticket.no,acceptedTs:now,by:cashier||'',missing,bill:{lines:lines.map(l=>({n:l.n,q:l.q,p:l.p})),total:bt.total,vat:bt.vat,net:bt.net}});
     toast(missing.length?'Accepted. Some items are no longer on the menu and were left out.':'Accepted and sent to the kitchen')}catch(e){fail(e)}}
 function webDecline(id){const w=S.web[id];if(!w)return;
   openModal(`<div class="dlg-h"><h2>Decline order?</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b"><p style="margin:0">The customer sees the reason on their phone.</p>
    <label class="field"><span class="lbl">Reason</span><select id="wdr"><option>Sorry, we are too busy right now</option><option>An item is not available</option><option>Outside our delivery area</option><option>We are closing</option><option>Please call the cafe</option></select></label></div>
    <div class="dlg-f"><button class="btn" data-close>Keep order</button><button class="btn pri" id="wdg">Decline order</button></div>`,d=>{
     d.querySelector('#wdg').onclick=async()=>{try{await upsert('weborders/'+id,{},{status:'declined',reason:d.querySelector('#wdr').value,declinedTs:Date.now(),by:cashier||''});closeModal();toast('Order declined')}catch(e){fail(e)}}})}
+
+function mapLink(addr){return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(addr+', Dubai')}
+function webActions(w,c){const t=S.tickets[w.ticket];const ph=(c&&c.phone)||w.phone||'';const btns=[];
+  if(w.status==='accepted'||w.status==='preparing')btns.push(`<button class="btn pri" style="flex:1" data-a="webOut" data-id="${w.id}">${w.type==='delivery'?'Out for delivery':'Ready'}</button>`);
+  if(w.status==='ready')btns.push(`<button class="btn pri" style="flex:1" data-a="webDone" data-id="${w.id}">${w.type==='delivery'?'Delivered':'Handed over'}</button>`);
+  if(w.status==='delivered')btns.push(`<button class="btn pri" style="flex:1" data-a="webDone" data-id="${w.id}">Payment received</button>`);
+  if(t)btns.push(`<button class="btn" data-a="webPrint" data-id="${w.id}">Print bill</button>`);
+  const links=[ph?`<a class="btn sm" href="tel:${esc(ph.replace(/[^\d+]/g,''))}">Call ${esc(ph)}</a>`:'',w.type==='delivery'&&w.address?`<a class="btn sm" target="_blank" rel="noopener" href="${mapLink(w.address)}">Map</a>`:''].filter(Boolean).join('');
+  return `<div class="row">${btns.join('')}</div>${links?`<div class="row">${links}</div>`:''}${t?'':'<p class="small muted" style="margin:0">This bill is no longer open (already paid or removed).</p>'}`}
+function webBillText(w){const t=S.tickets[w.ticket];if(!t)return '';const c=calc({lines:t.lines||[],disc:t.disc});const ts=Date.now();
+  const o={no:t.no,ts,date:dkey(ts),type:t.type,table:'',car:t.car||'',cust:t.cust||'',lines:t.lines||[],sub:c.sub,disc:c.disc,net:c.net,vat:c.vat,total:c.total,pay:{},by:cashier||''};
+  const W=paperW();const ph=(S.cust[w.cust]&&S.cust[w.cust].phone)||w.phone||'';
+  return receiptText(o)+'\n'+'='.repeat(W)+'\n'+wrapW(`TO PAY: AED ${fmt(c.total)} (${(WPAY[w.pay]||'Cash').toUpperCase()})`,W)+'\n'+(w.address?wrapW('Deliver to: '+w.address,W)+'\n':'')+(ph?'Phone: '+ph+'\n':'')+(w.note?wrapW('Note: '+w.note,W)+'\n':'')+(w.rider?'Delivery by: '+w.rider+'\n':'')}
+function printWebBill(id){const w=S.web[id];if(!w)return;const txt=webBillText(w);if(!txt){toast('This bill is no longer open.');return}printText('delivery-bill-'+(w.ticketNo||'')+'.pdf',txt,'receipt')}
+function webSendOut(id){const w=S.web[id];if(!w)return;const t=S.tickets[w.ticket];
+  const done=async(rider,print)=>{try{if(t&&t.status!=='ready')await queued('tickets/'+t.id,()=>DB.doc('tickets/'+t.id).update({status:'ready'}));
+      await upsert('weborders/'+id,{},{status:'ready',t_ready:Date.now(),rider:rider||''});closeModal();toast(w.type==='delivery'?'Out for delivery':'Marked ready');if(print)setTimeout(()=>printWebBill(id),300)}catch(e){fail(e)}};
+  if(w.type!=='delivery'){done('',false);return}
+  const riders=staffList().filter(s=>s.active!==false);
+  openModal(`<div class="dlg-h"><h2>Out for delivery</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b">
+   <label class="field"><span class="lbl">Who is delivering?</span><select id="wrd"><option value="">(not set)</option>${riders.map(s=>`<option ${s.role==='Delivery'?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>
+   <label class="row small"><input type="checkbox" id="wpb" checked> Print the bill to send with the order</label>
+   <p class="small muted" style="margin:0">The customer sees "On the way"${riders.length?' with the name of the delivery person':''}.</p></div>
+   <div class="dlg-f"><button class="btn pri" id="wgo">Send out</button></div>`,d=>{d.querySelector('#wgo').onclick=()=>done(d.querySelector('#wrd').value,d.querySelector('#wpb').checked)})}
+function webDeliver(id){const w=S.web[id];if(!w)return;const t=S.tickets[w.ticket];
+  if(!t){toast('This bill is already paid or removed.');return}
+  const tot=calc({lines:t.lines||[],disc:t.disc}).total;const already=w.status==='delivered';
+  openModal(`<div class="dlg-h"><h2>${already?'Payment received':w.type==='delivery'?'Delivered':'Handed over'} · ${esc(t.no)}</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b">
+   <div class="tl total"><span>Bill</span><span>${aed(tot)}</span></div>
+   <p class="small" style="margin:0">Customer chose: <b>${esc(WPAY[w.pay]||'Cash')}</b></p>
+   <div class="stack" style="gap:8px"><button class="btn pri big" data-pm="cash">Cash received</button><button class="btn big" data-pm="card">Card payment received</button>${already?'':'<button class="btn" data-pm="none">Delivered, not paid yet</button>'}</div></div>`,d=>{
+    d.querySelectorAll('[data-pm]').forEach(b=>b.onclick=async()=>{const pm=b.dataset.pm;d.querySelectorAll('[data-pm]').forEach(x=>x.disabled=true);
+      try{if(pm==='none'){await queued('tickets/'+t.id,()=>DB.doc('tickets/'+t.id).update({status:'done'}));await upsert('weborders/'+id,{},{status:'delivered',deliveredTs:Date.now()});closeModal();toast('Marked delivered. Collect payment later from Online orders.');return}
+        await upsert('weborders/'+id,{},{deliveredTs:w.deliveredTs||Date.now()});
+        const saved=cart;cart={lines:clone({x:t.lines}).x||[],type:t.type||'deliv',table:'',car:t.car||'',plat:t.plat||'',cust:t.cust||'',disc:t.disc||null,note:t.note||'',ticket:t.id};
+        const o=await finalize({[pm]:tot},pm==='cash'?tot:0,0,'');cart=saved;saveCart();closeModal();paint();toast(`Paid by ${pm} · token ${o.no}`)}
+      catch(e){fail(e);d.querySelectorAll('[data-pm]').forEach(x=>x.disabled=false)}})})}
 function newKey(){const a=new Uint8Array(18);crypto.getRandomValues(a);return Array.from(a,b=>'abcdefghjkmnpqrstuvwxyz23456789'[b%31]).join('')}
 function webLinkHtml(id){const c=S.cust[id];if(!c)return'';
   if(!DB||!DB.fb)return `<div class="panel" style="background:var(--surface-2)"><h3>Online ordering</h3><p class="small muted" style="margin:4px 0 0">Available once Firebase is connected.</p></div>`;
@@ -1437,7 +1476,7 @@ function teamPanel(){if(!S.role)return '';const canEdit=S.role==='owner';const u
 
 /* ---------- actions ---------- */
 const A={
-  goWeb:()=>{UI.kTab='web';go('orders')},webAccept:d=>webAccept(d.id),webDecline:d=>webDecline(d.id),
+  goWeb:()=>{UI.kTab='web';go('orders')},webOut:d=>webSendOut(d.id),webDone:d=>webDeliver(d.id),webPrint:d=>printWebBill(d.id),webAccept:d=>webAccept(d.id),webDecline:d=>webDecline(d.id),
   webPause:()=>{const on=!S.webPaused;setDoc('pub/ctl',{paused:on,by:cashier||'',ts:Date.now()}).then(()=>toast(on?'Online orders paused':'Taking online orders again'),fail)},
   testPrint:()=>{const v=($('#st_paper')||{}).value;const keep=S.settings.paper;if(v)S.settings.paper=v;const t=testReceipt();S.settings.paper=keep;printText('test-receipt.pdf',t,'receipt',v)},
   bannerTog:(d,el)=>el.classList.toggle('open'),

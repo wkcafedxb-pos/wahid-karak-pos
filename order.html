@@ -124,6 +124,7 @@ let tT;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clea
 const TYPES={delivery:'Delivery',pickup:'Pickup',car:'Car service'};
 const PAYS={cash:'Cash on delivery',card:'Card on delivery'};
 const LAST_STEP={delivery:'On the way',pickup:'Ready to collect',car:'Coming to your car'};
+const FINISHED={delivery:'Delivered',pickup:'Collected',car:'Handed over'};
 const ACTIVE=['new','accepted','preparing','ready'];
 const S={pub:null,ctl:{},cust:null,orders:[],cat:'all',ready:false,uid:null,custId:null,name:''};
 let cart=ls.get('wko_cart',[]);let form=ls.get('wko_form',{type:'delivery',pay:'cash',address:'',car:'',note:''});
@@ -171,7 +172,16 @@ function account(){const tx=(S.cust&&S.cust.tx)||{};let bal=0,st=0;Object.values
 function totals(){const m=itemsById();let sub=0;cart.forEach(l=>{const it=m[l.i];if(it)sub+=it.p*l.q});sub=r2(sub);const fee=form.type==='delivery'?(+S.pub.fee||0):0;return{sub,fee,total:r2(sub+fee),count:cart.reduce((a,l)=>a+l.q,0)}}
 function activeOrder(){return S.orders.find(o=>ACTIVE.includes(o.status))}
 function statusLine(o){if(o.status==='new')return 'Order sent. Waiting for the cafe to accept.';if(o.status==='accepted')return 'Accepted! Your order is next in line.';if(o.status==='preparing')return 'Your order is being prepared.';
-  if(o.status==='ready')return LAST_STEP[o.type]+'.';if(o.status==='done')return 'Done. Thank you!';if(o.status==='declined')return 'Sorry, the cafe could not take this order'+(o.reason?': '+o.reason:'.');if(o.status==='cancelled')return 'You cancelled this order.';return o.status}
+  if(o.status==='ready')return LAST_STEP[o.type]+(o.rider&&o.type==='delivery'?' with '+o.rider:'')+'.';
+  if(o.status==='delivered')return 'Delivered. Please pay '+aed(billTotal(o))+(o.pay==='card'?' by card':' in cash')+'.';
+  if(o.status==='done')return (FINISHED[o.type]||'Done')+' and paid. Thank you!';if(o.status==='declined')return 'Sorry, the cafe could not take this order'+(o.reason?': '+o.reason:'.');if(o.status==='cancelled')return 'You cancelled this order.';return o.status}
+function billTotal(o){return o.total||(o.bill&&o.bill.total)||o.est||0}
+function billSheet(id){const o=S.orders.find(x=>x.id===id);if(!o)return;openSheet=null;
+  const body=o.receipt?`<pre style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;font:12px/1.5 var(--f-mono);white-space:pre;overflow-x:auto;margin:0">${esc(o.receipt)}</pre>`
+    :o.bill?`<div class="card" style="gap:6px">${o.bill.lines.map(l=>`<div class="tl"><span>${l.q}× ${esc(l.n)}</span><span>${fmt(l.p*l.q)}</span></div>`).join('')}<div class="tl small muted"><span>Includes VAT</span><span>${fmt(o.bill.vat)}</span></div><div class="tl total"><span>To pay</span><span>${aed(o.bill.total)}</span></div><span class="small muted">${o.pay==='card'?'Card':'Cash'} ${o.type==='delivery'?'on delivery':o.type==='car'?'at your car':'at the counter'}. The tax invoice appears here once paid.</span></div>`
+    :'<p class="muted">The cafe confirms the bill when it accepts your order.</p>';
+  $('#modal').innerHTML=`<div class="ov" data-ov><div class="sheet" role="dialog" aria-modal="true" aria-label="Bill"><div class="grab"></div><div class="sh-h"><h2>${o.receipt?'Tax invoice':'Your bill'}${o.token?' · token '+esc(o.token):o.ticketNo?' · '+esc(o.ticketNo):''}</h2><button class="btn ghost sm" data-a="closeSheet">Close</button></div>${body}
+    ${o.receipt?'<button class="btn" data-a="copyBill" data-id="'+o.id+'">Copy invoice</button>':''}</div></div>`}
 function cleanCart(){const m=itemsById();const before=cart.length;cart=cart.filter(l=>m[l.i]&&m[l.i].a);if(cart.length!==before)saveCart()}
 
 /* ---------- paint ---------- */
@@ -179,25 +189,28 @@ function paint(){if(!S.ready)return;const p=S.pub;
   if(!p){screen('The menu is not ready yet','The cafe is setting up online ordering. Please try again later.');return}
   cleanCart();const st=openState();const ac=account();const act=activeOrder();
   const first=(S.cust&&S.cust.name||S.name||'').split(' ')[0];
-  const cats=(p.cats||[]).filter(c=>(p.items||[]).some(i=>i.c===c.id));
-  const items=(p.items||[]).filter(i=>S.cat==='all'?true:S.cat==='fav'?i.f:i.c===S.cat);
+  const avail=(p.items||[]).filter(i=>i.a);
+  const cats=(p.cats||[]).filter(c=>avail.some(i=>i.c===c.id));
+  if(S.cat!=='all'&&S.cat!=='fav'&&!cats.some(c=>c.id===S.cat))S.cat='all';
+  const items=avail.filter(i=>S.cat==='all'?true:S.cat==='fav'?i.f:i.c===S.cat);
   const inCart={};cart.forEach(l=>inCart[l.i]=(inCart[l.i]||0)+l.q);
-  const steps=o=>{const idx={new:0,accepted:1,preparing:2,ready:3}[o.status];const names=['Sent','Accepted','Preparing',LAST_STEP[o.type]||'Ready'];
+  const steps=o=>{const idx={new:0,accepted:1,preparing:2,ready:3,delivered:4,done:4}[o.status];const names=['Sent','Accepted','Preparing',LAST_STEP[o.type]||'Ready'];
     return `<div class="steps">${names.map((n,i)=>`<div class="step ${i<idx?'done':i===idx?'now':''}"><i></i>${esc(n)}</div>`).join('')}</div>`};
   const recent=S.orders.filter(o=>!ACTIVE.includes(o.status)).slice(0,5);
-  const lastDone=S.orders.find(o=>(o.status==='declined'||o.status==='done')&&Date.now()-(o.declinedTs||o.doneTs||o.ts)<45*60000&&!ls.get('wko_seen_'+o.id,false));
+  const lastDone=S.orders.find(o=>(o.status==='declined'||o.status==='done'||o.status==='delivered')&&Date.now()-(o.declinedTs||o.doneTs||o.ts)<45*60000&&!ls.get('wko_seen_'+o.id,false));
   $('#app').innerHTML=`
    <section class="hero"><div class="shop">${esc(p.shop||'Wahid Karak')}</div><h1>${first?'Hi '+esc(first)+'!':'Welcome!'} What would you like?</h1>
     <div class="chips">${p.stampEvery?`<span class="chip">${ac.stamps%p.stampEvery} of ${p.stampEvery} stamps${ac.stamps>=p.stampEvery?' · free karak waiting':''}</span>`:''}</div></section>
    ${act?`<section class="card" aria-live="polite"><div class="row" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><h2 style="font-size:1.15rem">${esc(TYPES[act.type]||'Order')}${act.ticketNo?' · '+esc(act.ticketNo):''}</h2><span class="small muted">${tstr(act.ts)}</span></div>
      ${steps(act)}<div>${esc(statusLine(act))}</div><div class="small muted">${esc((act.lines||[]).map(l=>l.q+'× '+l.n).join(', '))}</div>
-     ${act.status==='new'?'<div><button class="btn sm" data-a="cancel" data-id="'+act.id+'">Cancel order</button></div>':''}</section>`:''}
-   ${lastDone?`<div class="note ${lastDone.status==='done'?'ok':'bad'}" data-a="seen" data-id="${lastDone.id}" role="button">${esc(statusLine(lastDone))}${lastDone.status==='done'&&lastDone.token?' Token '+esc(lastDone.token)+'.':''} <span class="small muted">(tap to hide)</span></div>`:''}
+     ${act.bill?`<div class="tl" style="font-weight:700"><span>To pay${act.pay==='card'?' by card':' in cash'}</span><span>${aed(act.bill.total)}</span></div>`:''}
+     <div style="display:flex;gap:8px;flex-wrap:wrap">${act.bill?'<button class="btn sm" data-a="bill" data-id="'+act.id+'">View bill</button>':''}${act.status==='new'?'<button class="btn sm" data-a="cancel" data-id="'+act.id+'">Cancel order</button>':''}</div></section>`:''}
+   ${lastDone?`<div class="note ${lastDone.status==='declined'?'bad':'ok'}">${esc(statusLine(lastDone))}${lastDone.status==='done'&&lastDone.token?' Token '+esc(lastDone.token)+'.':''}<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">${lastDone.bill||lastDone.receipt?'<button class="btn sm" data-a="bill" data-id="'+lastDone.id+'">View bill</button>':''}<button class="btn sm ghost" data-a="seen" data-id="${lastDone.id}">Hide</button></div></div>`:''}
    ${st.ok?'':`<div class="note warn">${esc(st.msg)}</div>`}
-   <nav class="cats" aria-label="Menu sections"><button class="chip ${S.cat==='all'?'on':''}" data-a="cat" data-v="all">All</button>${(p.items||[]).some(i=>i.f)?`<button class="chip ${S.cat==='fav'?'on':''}" data-a="cat" data-v="fav">Popular</button>`:''}${cats.map(c=>`<button class="chip ${S.cat===c.id?'on':''}" data-a="cat" data-v="${esc(c.id)}">${esc(c.n)}</button>`).join('')}</nav>
+   <nav class="cats" aria-label="Menu sections"><button class="chip ${S.cat==='all'?'on':''}" data-a="cat" data-v="all">All</button>${avail.some(i=>i.f)?`<button class="chip ${S.cat==='fav'?'on':''}" data-a="cat" data-v="fav">Popular</button>`:''}${cats.map(c=>`<button class="chip ${S.cat===c.id?'on':''}" data-a="cat" data-v="${esc(c.id)}">${esc(c.n)}</button>`).join('')}</nav>
    <section class="tiles">${items.map(i=>`<button class="tile ${i.a?'':'off'}" data-a="add" data-id="${esc(i.id)}" ${i.a?'':'aria-disabled="true"'} aria-label="${esc(i.n)} ${fmt(i.p)} dirhams${i.a?'':', sold out'}"><span class="n">${esc(i.n)}</span>${i.a?'':'<span class="so">Sold out</span>'}<span class="p">${fmt(i.p)}</span>${inCart[i.id]?`<span class="q">×${inCart[i.id]}</span>`:''}</button>`).join('')||'<div class="empty">Nothing in this section right now.</div>'}</section>
-   ${recent.length?`<section class="card"><h2 style="font-size:1.1rem">Your recent orders</h2><div class="hist">${recent.map(o=>`<div class="hrow"><div style="min-width:0"><div class="small"><b>${new Date(o.ts).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</b> · ${esc(TYPES[o.type]||'')} <span class="pill ${o.status==='done'?'p-ok':o.status==='declined'?'p-bad':'p-mute'}">${o.status==='done'?'Done':o.status==='declined'?'Declined':'Cancelled'}</span></div>
-     <div class="small muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((o.lines||[]).map(l=>l.q+'× '+l.n).join(', '))}</div></div><button class="btn sm" data-a="again" data-id="${o.id}">Order again</button></div>`).join('')}</div></section>`:''}
+   ${recent.length?`<section class="card"><h2 style="font-size:1.1rem">Your recent orders</h2><div class="hist">${recent.map(o=>`<div class="hrow"><div style="min-width:0"><div class="small"><b>${new Date(o.ts).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</b> · ${esc(TYPES[o.type]||'')} <span class="pill ${o.status==='done'?'p-ok':o.status==='delivered'?'p-warn':o.status==='declined'?'p-bad':'p-mute'}">${o.status==='done'?(FINISHED[o.type]||'Done'):o.status==='delivered'?'To pay':o.status==='declined'?'Declined':'Cancelled'}</span></div>
+     <div class="small muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((o.lines||[]).map(l=>l.q+'× '+l.n).join(', '))}</div></div><div style="display:flex;gap:6px;flex:none">${o.bill||o.receipt?`<button class="btn sm" data-a="bill" data-id="${o.id}">Bill</button>`:''}<button class="btn sm" data-a="again" data-id="${o.id}">Again</button></div></div>`).join('')}</div></section>`:''}
    <p class="small muted" style="text-align:center">${p.phone?'Questions? Call the cafe on <span class="num">'+esc(p.phone)+'</span>. ':''}Keep this link private: it orders in your name.<br>Tip: add this page to your home screen for one-tap ordering.</p>`;
   const t=totals();const bar=$('#bar');
   if(t.count){bar.hidden=false;bar.innerHTML=`<button class="btn pri" data-a="checkout"><span>View order · ${t.count} item${t.count>1?'s':''}</span><span class="num">${aed(t.sub)}</span></button>`}else bar.hidden=true;
@@ -262,6 +275,8 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-a]'
   else if(a==='send')send(el);
   else if(a==='cancel'){if(!el.dataset.sure){el.dataset.sure='1';el.textContent='Tap again to cancel';setTimeout(()=>{if(el.isConnected){delete el.dataset.sure;el.textContent='Cancel order'}},4000);return}
     try{await fs.doc('weborders/'+el.dataset.id).update({status:'cancelled',cancelTs:Date.now()});toast('Order cancelled')}catch(x){toast('Too late to cancel: the cafe has already accepted it. Please call them.')}}
+  else if(a==='bill')billSheet(el.dataset.id);
+  else if(a==='copyBill'){const o=S.orders.find(x=>x.id===el.dataset.id);if(o&&o.receipt){try{await navigator.clipboard.writeText(o.receipt);toast('Invoice copied')}catch(x){toast('Could not copy')}}}
   else if(a==='seen'){ls.set('wko_seen_'+el.dataset.id,true);paint()}
   else if(a==='again'){const o=S.orders.find(x=>x.id===el.dataset.id);if(!o)return;let skipped=0;
     (o.lines||[]).forEach(l=>{const it=m[l.i];if(!it||!it.a){skipped++;return}cart.push({i:l.i,n:it.n,q:l.q,m:(l.m||[]).filter(x=>(S.pub.mods||[]).includes(x))})});saveCart();paint();
