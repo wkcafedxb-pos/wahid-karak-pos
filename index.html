@@ -272,6 +272,7 @@ svg.chart .pt{fill:var(--cardamom)}
   td{padding:9px 6px}
   .toast{bottom:calc(138px + env(safe-area-inset-bottom,0px))}
   .denoms{grid-template-columns:repeat(3,1fr)}
+  table.bills .hb{display:none}table.bills td:first-child,table.bills th:first-child{position:static}
   .tables{grid-template-columns:repeat(6,1fr)}
   .tables button{padding:10px 2px}
   .tl.total{font-size:1.15rem}
@@ -758,11 +759,15 @@ function kitchenQueue(){const t=today();const out=[];
   Object.values(S.tickets).forEach(k=>{if(k.sent&&k.status!=='done')out.push({kind:'t',id:k.id,no:k.table||k.no,ts:k.sentTs||k.ts,status:k.status||'new',lines:k.lines||[],type:k.type,table:k.table,car:k.car,unpaid:true})});
   return out.sort((a,b)=>a.ts-b.ts)}
 RENDER.orders=function(){
-  const tabs=`<div class="seg"><button class="${UI.kTab==='kitchen'?'on':''}" data-a="kTab" data-v="kitchen">Kitchen board</button><button class="${UI.kTab==='history'?'on':''}" data-a="kTab" data-v="history">Today's bills</button></div>`;
+  const tabs=`<div class="seg"><button class="${UI.kTab==='kitchen'?'on':''}" data-a="kTab" data-v="kitchen">Kitchen board</button><button class="${UI.kTab==='history'?'on':''}" data-a="kTab" data-v="history">Bills</button></div>`;
   if(UI.kTab==='history'){
-    const f=UI.hFilter.toLowerCase();const list=ordersOn(today()).reverse().filter(o=>!f||String(o.no).toLowerCase().includes(f)||(o.car||'').toLowerCase().includes(f)||(o.cust&&S.cust[o.cust]&&S.cust[o.cust].name.toLowerCase().includes(f)));
-    return `<div class="topbar"><h1>Orders</h1>${tabs}</div><div class="row" style="margin-bottom:10px"><input id="hf" data-in="hFilter" placeholder="Find by token, car plate or customer" value="${esc(UI.hFilter)}" style="max-width:360px"></div>
-     ${list.length?`<div class="panel tbl-wrap" style="padding:4px 8px"><table><thead><tr><th>Token</th><th>Time</th><th>Type</th><th>Items</th><th>Paid by</th><th class="r">Total</th></tr></thead><tbody>${list.map(o=>`<tr class="click" data-a="viewOrder" data-id="${o.id}" style="${o.void?'opacity:.5;text-decoration:line-through':''}"><td><b class="num">${esc(o.no)}</b></td><td class="num">${tstr(o.ts)}</td><td>${TYPES[o.type]}${o.table?' '+esc(o.table):''}</td><td class="small">${esc(o.lines.map(l=>l.q+'× '+l.n).join(', ')).slice(0,80)}</td><td>${Object.keys(o.pay).map(k=>PAYN[k].split(' ')[0]).join(' + ')}</td><td class="r">${fmt(o.total)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>No bills yet today</b>Paid orders show here as soon as they are rung up.</div>'}`}
+    const hd=UI.hDate||today();const f=UI.hFilter.toLowerCase();const src=billsOn(hd);
+    const nav=`<div class="row" style="margin-bottom:10px;flex-wrap:nowrap"><button class="btn sm" data-a="hDay" data-v="-1" aria-label="Previous day">‹</button><input type="date" id="hDate" value="${hd}" max="${today()}" style="max-width:170px;flex:none"><button class="btn sm" data-a="hDay" data-v="1" aria-label="Next day" ${hd>=today()?'disabled':''}>›</button>${hd!==today()?'<button class="btn sm" data-a="hDay" data-v="0">Today</button>':''}</div>`;
+    if(src===null)return `<div class="topbar"><h1>Orders</h1>${tabs}</div>${nav}<div class="empty"><b>Loading bills for ${dstr(hd)}…</b></div>`;
+    const list=src.slice().reverse().filter(o=>!f||String(o.no).toLowerCase().includes(f)||(o.car||'').toLowerCase().includes(f)||(o.cust&&S.cust[o.cust]&&S.cust[o.cust].name.toLowerCase().includes(f)));
+    return `<div class="topbar"><h1>Orders</h1>${tabs}</div>${nav}<div class="row" style="margin-bottom:10px"><input id="hf" data-in="hFilter" placeholder="Find by token, car plate or customer" value="${esc(UI.hFilter)}" style="max-width:360px"></div>
+     <p class="small muted" style="margin:-4px 0 10px">${dstr(hd)} · ${src.filter(o=>!o.void).length} bills · ${aed(src.filter(o=>!o.void).reduce((a,o)=>a+o.total,0))}. Tap a bill to see it, print it again or send it on WhatsApp.</p>
+     ${list.length?`<div class="panel tbl-wrap" style="padding:4px 8px"><table class="bills"><thead><tr><th>Token</th><th>Time</th><th class="hb">Type</th><th>Items</th><th class="hb">Paid by</th><th class="r">Total</th></tr></thead><tbody>${list.map(o=>`<tr class="click" data-a="viewOrder" data-id="${o.id}" style="${o.void?'opacity:.5;text-decoration:line-through':''}"><td><b class="num">${esc(o.no)}</b></td><td class="num">${tstr(o.ts)}</td><td class="hb">${TYPES[o.type]}${o.table?' '+esc(o.table):''}</td><td class="small">${esc(o.lines.map(l=>l.q+'× '+l.n).join(', ')).slice(0,80)}</td><td class="hb">${Object.keys(o.pay).map(k=>PAYN[k].split(' ')[0]).join(' + ')}</td><td class="r">${fmt(o.total)}</td></tr>`).join('')}</tbody></table></div>`:`<div class="empty"><b>${hd===today()?'No bills yet today':'No bills on '+dstr(hd)}</b>${hd===today()?'Paid orders show here as soon as they are rung up.':'Pick another day with the arrows or the date box.'}</div>`}`}
   const q=kitchenQueue();const cols=[['new','New'],['prep','Preparing'],['ready','Ready to hand over']];const nowT=Date.now();
   return `<div class="topbar"><h1>Orders</h1>${tabs}</div><p class="muted small" style="margin:-6px 0 12px">Tap a card to move it along. Cards turn red after 8 minutes.</p>
    <div class="kds">${cols.map(([k,l])=>{const cs=q.filter(x=>x.status===k);return `<div class="kcol"><h3><span>${l}</span><span class="num">${cs.length}</span></h3>${cs.map(x=>{const mins=Math.floor((nowT-x.ts)/60000);
@@ -771,11 +776,17 @@ RENDER.orders=function(){
 async function kAdvance(kind,id){const nx={new:'prep',prep:'ready',ready:'done'};
   if(kind==='o'){const o=S.orders[id];if(!o)return;const s=nx[o.status||'new'];try{await upsert('orders/'+o._doc,{},{o:{[id]:{status:s,['t_'+s]:Date.now()}}})}catch(e){fail(e)}}
   else{const t=S.tickets[id];if(!t)return;const s=nx[t.status||'new'];try{await queued('tickets/'+id,()=>DB.doc('tickets/'+id).update({status:s}))}catch(e){fail(e)}}}
-function viewOrder(id){const o=S.orders[id];if(!o)return;
+const OLD={};const oldDays={};
+function billsOn(k){if(k>=WIN)return ordersOn(k);if(oldDays[k])return oldDays[k];
+  if(oldDays[k]===undefined){oldDays[k]=false;DB.collection('orders').where('date','==',k).get().then(q=>{const out=[];q.docs.forEach(d=>{const o=d.data().o||{};for(const id in o){const x=Object.assign({},o[id],{_doc:d.id});OLD[id]=x;out.push(x)}});
+    oldDays[k]=out.sort((a,b)=>a.ts-b.ts);paint()}).catch(e=>{oldDays[k]=undefined;fail(e)})}
+  return null}
+function findBill(c,t){const id=Object.keys(S.orders).find(i=>{const o=S.orders[i];return o.cust===c&&String(o.no)===String(t.ref)&&Math.abs(o.ts-t.ts)<10*60000});return id||null}
+function viewOrder(id){const o=S.orders[id]||OLD[id];if(!o)return;
   openModal(`<div class="dlg-h"><h2>Bill ${esc(o.no)}</h2><button class="btn ghost" data-close>Close</button></div><div class="dlg-b"><div class="receipt">${esc(receiptText(o))}</div>
-   <div class="row"><button class="btn pri" data-k="print">Print</button><button class="btn" data-k="copy">Copy</button><a class="btn grn" target="_blank" rel="noopener" href="${waHref(o.cust&&S.cust[o.cust]&&S.cust[o.cust].phone,receiptText(o))}">WhatsApp</a>${o.void?'':'<button class="btn danger" data-k="void">Void bill</button>'}</div></div>`,d=>{
+   <div class="row"><button class="btn pri" data-k="print">Print</button><button class="btn" data-k="copy">Copy</button><a class="btn grn" target="_blank" rel="noopener" href="${waHref(o.cust&&S.cust[o.cust]&&S.cust[o.cust].phone,receiptText(o))}">WhatsApp</a>${o.void||o.date!==today()||S.mode==='readonly'?'':'<button class="btn danger" data-k="void">Void bill</button>'}</div></div>`,d=>{
     d.querySelector('[data-k=copy]').onclick=()=>copyText(receiptText(o));d.querySelector('[data-k=print]').onclick=()=>printText(`receipt-${o.date}-${o.no}.pdf`,receiptText(o),'receipt');
-    const v=d.querySelector('[data-k=void]');if(v)v.onclick=()=>{if(!isManagerUnlocked()){closeModal();toast(S.role&&!S.settings.managerPin?'Only a manager or the owner can void a bill.':'Voiding needs the manager PIN. Open Reports and unlock with the PIN first.');return}
+    const v=d.querySelector('[data-k=void]');if(v)v.onclick=()=>{if(o.date!==today()){toast('Only today\'s bills can be voided.');return}if(!isManagerUnlocked()){closeModal();toast(S.role&&!S.settings.managerPin?'Only a manager or the owner can void a bill.':'Voiding needs the manager PIN. Open Reports and unlock with the PIN first.');return}
       openModal(`<div class="dlg-h"><h2>Void bill ${esc(o.no)}?</h2></div><div class="dlg-b"><p>The bill stays in history marked void and drops out of sales, stock and VAT. Refund ${aed(o.total)} to the customer yourself.</p><label class="field"><span class="lbl">Reason</span><input id="vr" placeholder="e.g. wrong item, customer left"></label></div><div class="dlg-f"><button class="btn" data-close>Keep bill</button><button class="btn pri" id="vg">Void bill</button></div>`,dd=>{
         dd.querySelector('#vg').onclick=async()=>{const reason=dd.querySelector('#vr').value.trim();if(!reason){toast('Write a reason.');return}
           try{await upsert('orders/'+o._doc,{},{o:{[o.id]:{void:{reason,by:cashier,ts:Date.now()},status:'done'}}});
@@ -926,8 +937,8 @@ function custView(id){const c=S.cust[id];if(!c)return;const b=custBal(c);const t
   openModal(`<div class="dlg-h"><h2>${esc(c.name)}</h2><button class="btn ghost" data-close>Close</button></div>
   <div class="dlg-b"><div class="kpis"><div class="kpi"><div class="lbl">Owes</div><div class="v">${aed(b.bal)}</div></div><div class="kpi"><div class="lbl">Stamps</div><div class="v num">${b.stamps}</div><div class="d">${S.settings.stampEvery} = 1 free cup</div></div></div>
   <div class="row"><button class="btn grn" id="pay">Record payment</button><button class="btn" id="ed">Edit details</button>${c.phone&&b.bal>0?`<a class="btn" target="_blank" rel="noopener" href="${waLink(c.phone,msg)}">WhatsApp reminder</a>`:''}<button class="btn" id="stmt">Print statement</button></div>
-  <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Entry</th><th class="r">Amount</th></tr></thead><tbody>${tx.map(t=>`<tr><td class="num">${new Date(t.ts).toLocaleDateString('en-GB')}</td><td>${t.t==='credit'?'Bill '+esc(t.ref||''):t.t==='pay'?'Payment ('+esc(t.method||'cash')+')':t.t==='redeem'?'Free cup':esc(t.ref||'Adjustment')}</td><td class="r" style="color:${t.t==='pay'?'var(--ok)':'inherit'}">${t.t==='redeem'?'—':(t.t==='pay'?'−':'')+fmt(Math.abs(t.amt))}</td></tr>`).join('')||'<tr><td colspan="3" class="muted">No account entries yet.</td></tr>'}</tbody></table></div></div>`,d=>{
-    d.querySelector('#ed').onclick=()=>{closeModal();custForm(id)};
+  <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Entry</th><th class="r">Amount</th></tr></thead><tbody>${tx.map(t=>`<tr ${t.t==='credit'&&findBill(id,t)?`class="click" data-bill="${findBill(id,t)}" title="Open this bill"`:''}><td class="num">${new Date(t.ts).toLocaleDateString('en-GB')}</td><td>${t.t==='credit'?'Bill '+esc(t.ref||''):t.t==='pay'?'Payment ('+esc(t.method||'cash')+')':t.t==='redeem'?'Free cup':esc(t.ref||'Adjustment')}</td><td class="r" style="color:${t.t==='pay'?'var(--ok)':'inherit'}">${t.t==='redeem'?'—':(t.t==='pay'?'−':'')+fmt(Math.abs(t.amt))}</td></tr>`).join('')||'<tr><td colspan="3" class="muted">No account entries yet.</td></tr>'}</tbody></table></div></div>`,d=>{
+    d.querySelector('#ed').onclick=()=>{closeModal();custForm(id)};d.querySelectorAll('[data-bill]').forEach(r=>r.onclick=()=>viewOrder(r.dataset.bill));
     d.querySelector('#stmt').onclick=()=>{closeModal();statementDialog(id)};
     d.querySelector('#pay').onclick=()=>{openModal(`<div class="dlg-h"><h2>Payment from ${esc(c.name)}</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b"><p>Balance ${aed(b.bal)}</p><div class="fgrid"><label class="field"><span class="lbl">Amount (AED)</span><input id="pa" type="number" step="0.5" value="${b.bal>0?b.bal:''}"></label><label class="field"><span class="lbl">Paid by</span><select id="pm"><option value="cash">Cash (goes in drawer)</option><option value="card">Card</option><option value="transfer">Bank transfer</option></select></label></div></div><div class="dlg-f"><button class="btn pri" id="pg">Record payment</button></div>`,dd=>{
       dd.querySelector('#pg').onclick=async()=>{const amt=r2(+dd.querySelector('#pa').value||0);if(amt<=0){toast('Enter an amount.');return}
@@ -992,7 +1003,7 @@ RM.moves=function(){const rows=[];
   return `<div class="row" style="margin-bottom:10px"><select id="movItem" style="max-width:320px"><option value="">All materials</option>${invItems().map(v=>`<option value="${v.id}" ${f===v.id?'selected':''}>${esc(v.name)}</option>`).join('')}</select></div>
    <p class="small muted" style="margin:0 0 8px">Deliveries, wastage and count corrections for the last two months. Use from sales is worked out from recipes and not listed line by line.</p>
    ${list.length?`<div class="panel tbl-wrap" style="padding:4px 8px"><table><thead><tr><th>Date</th><th>Material</th><th>What</th><th class="r">Qty</th><th class="r">AED</th></tr></thead><tbody>${list.map(r=>`<tr><td class="num">${new Date(r.ts).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} ${tstr(r.ts)}</td><td>${esc(invName(r.i))}</td><td class="small">${esc(r.what)}</td><td class="r" style="color:${r.q<0?'var(--bad)':'var(--ok)'}">${r.q>0?'+':''}${fmt(r.q)} ${esc(invUnit(r.i))}</td><td class="r">${fmt(r.val)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No movements yet.</div>'}`};
-document.addEventListener('change',e=>{if(e.target.id==='movItem'){UI.movItem=e.target.value;paint()}});
+document.addEventListener('change',e=>{if(e.target.id==='movItem'){UI.movItem=e.target.value;paint()}if(e.target.id==='hDate'){const v=e.target.value;UI.hDate=v&&v<=today()?v:today();paint()}});
 
 function invForm(id){const v=id?S.inv.items[id]:{};
   openModal(`<div class="dlg-h"><h2>${id?'Edit material':'New raw material'}</h2><button class="btn ghost" data-close>Cancel</button></div>
@@ -1344,7 +1355,7 @@ const A={
     d.querySelectorAll('.keys [data-v]').forEach(b=>b.onclick=()=>{d.querySelector('#dv').value=b.dataset.v});
     d.querySelector('#dx').onclick=()=>{cart.disc=null;saveCart();closeModal();repaintCart()};
     d.querySelector('#dg').onclick=()=>{const v=+d.querySelector('#dv').value||0;const sub=calc(Object.assign({},cart,{disc:null})).sub;const pct=type==='pct'?v:(sub?v/sub*100:0);if(pct>20&&!isManagerUnlocked()){toast('Discounts over 20% need the manager PIN.');return}cart.disc=v?{type,v}:null;saveCart();closeModal();repaintCart()}})},
-  kTab:d=>{UI.kTab=d.v;paint()},kAdv:d=>kAdvance(d.kind,d.id),viewOrder:d=>viewOrder(d.id),
+  kTab:d=>{UI.kTab=d.v;paint()},hDay:d=>{const n=+d.v;UI.hDate=n?addDays(UI.hDate||today(),n):today();if(UI.hDate>today())UI.hDate=today();paint()},kAdv:d=>kAdvance(d.kind,d.id),viewOrder:d=>viewOrder(d.id),
   newCust:()=>custForm(null),custView:d=>custView(d.id),
   newInv:()=>invForm(null),editInv:d=>invForm(d.id),stockCard:d=>stockCard(d.id),
   recv:d=>{const v=S.inv.items[d.id];purForm({lines:[{i:d.id}],sup:v&&v.sup})},count:d=>countForm(d.id),waste:d=>wasteForm(d.id||''),fullCount:()=>wholeCount(null),
