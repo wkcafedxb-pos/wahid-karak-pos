@@ -227,6 +227,11 @@ svg.chart .pt{fill:var(--cardamom)}
   .kds{grid-template-columns:repeat(3,minmax(230px,80vw))}
   h1{font-size:1.35rem}
 }
+.banner.webalert{background:var(--karak);color:var(--on-karak);white-space:normal;font-size:.9rem}
+.wcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.wcard.isnew{border-color:var(--karak);box-shadow:inset 4px 0 0 var(--karak)}
+.wcard ul{margin:0;padding-left:18px}.wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:12px}
+.linkbox{background:var(--surface);border:1px dashed var(--line);border-radius:8px;padding:8px 10px;font-family:var(--f-mono);font-size:.78rem;word-break:break-all}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 /* ---- phone & tablet tuning ---- */
 .btn{color:var(--fg)}a.btn{text-decoration:none}
@@ -390,6 +395,8 @@ function subscribe(){
   const onErr=e=>{console.warn(e);if(e&&e.code==='revoked'){S.mode='readonly';paint()}};
   DB.doc('cfg/settings').onSnapshot(s=>{S.settings=Object.assign(clone(DEF_SETTINGS),s.data()||{});S.loaded.settings=1;changed()},onErr);
   DB.doc('cfg/menu').onSnapshot(s=>{const d=s.data()||{};S.menu={cats:d.cats||[],items:d.items||{}};S.loaded.menu=1;changed()},onErr);
+  if(DB.fb&&S.role){DB.collection('weborders').where('status','in',WEB_ACTIVE).onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=Object.assign({id:d.id},d.data()));S.web=m;changed()},onErr);
+    DB.doc('pub/ctl').onSnapshot(s=>{S.webPaused=!!(s.data()||{}).paused;changed()},()=>{})}
   DB.doc('cfg/inv').onSnapshot(s=>{const d=s.data()||{};S.inv={items:d.items||{},soldOut:d.soldOut||{}};S.loaded.inv=1;changed()},onErr);
   DB.doc('cfg/staff').onSnapshot(s=>{const d=s.data()||{};S.staff={items:d.items||{}};changed()},onErr);
   DB.collection('cust').onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.cust=m;changed()},onErr);
@@ -404,7 +411,7 @@ function subscribe(){
   DB.collection('close').where('date','>=',WIN).onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.closes=m;changed()},onErr);
 }
 let paintPending=false;
-function changed(){S.ready=true;if(paintPending)return;paintPending=true;requestAnimationFrame(()=>{paintPending=false;
+function changed(){S.ready=true;try{webTick();syncPub()}catch(e){console.warn(e)}if(paintPending)return;paintPending=true;requestAnimationFrame(()=>{paintPending=false;
   const a=document.activeElement;
   if(a&&a.closest&&a.closest('#view')&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)){
     if(['q','hf','custQ','stockQ','menuQ'].includes(a.id)){const id=a.id,pos=a.selectionStart;paint();const n=document.getElementById(id);if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}}return}
@@ -465,7 +472,7 @@ const STAFF_OK=new Set(['expenses','close']);
 
 /* ---------- shell ---------- */
 function paintRail(){
-  const kcount=kitchenQueue().filter(k=>k.status!=='ready').length;
+  const kcount=kitchenQueue().filter(k=>k.status!=='ready').length+(S.role&&S.role!=='accountant'?webNew().length:0);
   $('#rail').innerHTML=`<div class="brand"><b>Wahid<br>Karak</b><span>POS</span></div>`+
    VIEWS.map(([k,l])=>`<button class="nav ${UI.view===k?'on':''} ${MOBILE_MAIN.includes(k)?'':'x'}" data-a="go" data-v="${k}" aria-label="${l}">${icon(k)}<span>${l}${k==='orders'&&kcount?` (${kcount})`:''}</span></button>`).join('')+
    `<button class="nav mob-more" data-a="more" aria-label="More">${icon('more')}<span>More</span></button><div class="spacer"></div>${S.user?`<button class="nav x" data-a="signOut" title="${esc(S.user.email||'')}">${icon('staff')}<span>Sign out</span></button>`:''}`;
@@ -483,7 +490,8 @@ function paint(){
   if(UI.view==='sell')afterSell();
 }
 function modeBanner(){
-  let b='';
+  let b='';const wn=S.role&&S.role!=='accountant'?webNew().length:0;
+  if(wn&&!(UI.view==='orders'&&UI.kTab==='web'))b+=`<div class="banner webalert" data-a="goWeb" role="button"><b>${wn===1?'New online order':wn+' new online orders'}.</b> Tap here to see and accept.</div>`;
   if(S.mode==='local')b+=`<div class="banner" data-a="bannerTog" title="Tap to read more"><b>Demo mode.</b> Firebase is not connected yet (fill in firebase-config.js), so everything is saved in this browser only.</div>`;
   if(S.mode==='readonly')b+=`<div class="banner" data-a="bannerTog" title="Tap to read more"><b>Accountant view.</b> You can see sales, VAT, purchases and reports, and print or export them. Nothing can be changed from this account.</div>`;
   if(S.offline)b+=`<div class="banner" data-a="bannerTog" title="Tap to read more" style="background:var(--bad-soft)"><b>No internet.</b> Keep selling: bills are saved on this device and sync when the connection returns.</div>`;
@@ -597,7 +605,7 @@ function payDialog(){
   const t=calc(cart);const c=cart.cust&&S.cust[cart.cust];
   const plat=cart.type==='deliv'&&cart.plat&&cart.plat!=='own';
   const methods=plat?['platform','cash','card']:['cash','card','credit','split'];
-  let method=plat?'platform':'cash';let tend='';
+  const wtk=cart.ticket&&S.tickets[cart.ticket];let method=plat?'platform':(wtk&&wtk.webPay==='khata'&&cart.cust?'credit':wtk&&wtk.webPay==='card'?'card':'cash');let tend='';
   const draw=()=>{
     const tendN=+tend||0;const change=r2(tendN-t.total);
     let body='';
@@ -650,6 +658,7 @@ async function finalize(pay,tendered,change,ref){
     if(n)patch[uid('t')]={t:'stamp',n,ts,ref:o.no};
     const red=o.lines.filter(l=>l.free).length;
     if(Object.keys(patch).length)upsert('cust/'+o.cust,{tx:{}},{tx:patch}).catch(fail)}
+  if(tk&&tk.web)upsert('weborders/'+tk.web,{},{status:'done',token:o.no,total:o.total,doneTs:Date.now()}).catch(()=>{});
   if(cart.ticket)delDoc('tickets/'+cart.ticket).catch(()=>{});
   cart=newCart();saveCart();UI.cartOpen=false;paint();
   return o;
@@ -755,6 +764,7 @@ async function holdCart(sendKitchen){
   const id=cart.ticket||uid('t');const prev=S.tickets[id]||{};
   const data={id,lines:cart.lines,type:cart.type,table:cart.table,car:cart.car,plat:cart.plat,cust:cart.cust,disc:cart.disc,note:cart.note,ts:prev.ts||Date.now(),by:cashier,no:prev.no||nextTicketNo(),
     sent:sendKitchen||prev.sent||false,status:prev.status||'new',sentTs:sendKitchen&&!prev.sent?Date.now():(prev.sentTs||0)};
+  if(prev.web)Object.assign(data,{web:prev.web,webPay:prev.webPay||'',webName:prev.webName||'',webPhone:prev.webPhone||'',address:prev.address||''});
   try{await setDoc('tickets/'+id,clone(data));cart=newCart();saveCart();UI.cartOpen=false;paint();toast(sendKitchen?'Sent to kitchen':'Order saved as open bill')}catch(e){fail(e)}
 }
 function nextTicketNo(){let m=0;Object.values(S.tickets).forEach(t=>{const n=parseInt(String(t.no||'').slice(1));if(n>m)m=n});return 'B'+(m+1)}
@@ -767,10 +777,11 @@ function ticketsDialog(){const ts=Object.values(S.tickets).sort((a,b)=>a.ts-b.ts
 /* ---------- ORDERS / KITCHEN ---------- */
 function kitchenQueue(){const t=today();const out=[];
   Object.values(S.orders).forEach(o=>{if(o.date===t&&!o.void&&o.status!=='done')out.push({kind:'o',id:o.id,no:o.no,ts:o.ts,status:o.status||'new',lines:o.lines,type:o.type,table:o.table,car:o.car,doc:o._doc,plat:o.plat})});
-  Object.values(S.tickets).forEach(k=>{if(k.sent&&k.status!=='done')out.push({kind:'t',id:k.id,no:k.table||k.no,ts:k.sentTs||k.ts,status:k.status||'new',lines:k.lines||[],type:k.type,table:k.table,car:k.car,unpaid:true})});
+  Object.values(S.tickets).forEach(k=>{if(k.sent&&k.status!=='done')out.push({kind:'t',id:k.id,no:k.table||k.no,ts:k.sentTs||k.ts,status:k.status||'new',lines:k.lines||[],type:k.type,table:k.table,car:k.car,unpaid:true,web:k.web,wn:k.webName,addr:k.address})});
   return out.sort((a,b)=>a.ts-b.ts)}
 RENDER.orders=function(){
-  const tabs=`<div class="seg"><button class="${UI.kTab==='kitchen'?'on':''}" data-a="kTab" data-v="kitchen">Kitchen board</button><button class="${UI.kTab==='history'?'on':''}" data-a="kTab" data-v="history">Bills</button></div>`;
+  const tabs=`<div class="seg"><button class="${UI.kTab==='kitchen'?'on':''}" data-a="kTab" data-v="kitchen">Kitchen board</button>${DB&&DB.fb?`<button class="${UI.kTab==='web'?'on':''}" data-a="kTab" data-v="web">Online${webNew().length?` (${webNew().length})`:''}</button>`:''}<button class="${UI.kTab==='history'?'on':''}" data-a="kTab" data-v="history">Bills</button></div>`;
+  if(UI.kTab==='web')return `<div class="topbar"><h1>Orders</h1>${tabs}</div>`+webHtml();
   if(UI.kTab==='history'){
     const hd=UI.hDate||today();const f=UI.hFilter.toLowerCase();const src=billsOn(hd);
     const nav=`<div class="row" style="margin-bottom:10px;flex-wrap:nowrap"><button class="btn sm" data-a="hDay" data-v="-1" aria-label="Previous day">‹</button><input type="date" id="hDate" value="${hd}" max="${today()}" style="max-width:170px;flex:none"><button class="btn sm" data-a="hDay" data-v="1" aria-label="Next day" ${hd>=today()?'disabled':''}>›</button>${hd!==today()?'<button class="btn sm" data-a="hDay" data-v="0">Today</button>':''}</div>`;
@@ -782,11 +793,12 @@ RENDER.orders=function(){
   const q=kitchenQueue();const cols=[['new','New'],['prep','Preparing'],['ready','Ready to hand over']];const nowT=Date.now();
   return `<div class="topbar"><h1>Orders</h1>${tabs}</div><p class="muted small" style="margin:-6px 0 12px">Tap a card to move it along. Cards turn red after 8 minutes.</p>
    <div class="kds">${cols.map(([k,l])=>{const cs=q.filter(x=>x.status===k);return `<div class="kcol"><h3><span>${l}</span><span class="num">${cs.length}</span></h3>${cs.map(x=>{const mins=Math.floor((nowT-x.ts)/60000);
-    return `<div class="kcard ${mins>=8&&k!=='ready'?'late':''}" data-a="kAdv" data-kind="${x.kind}" data-id="${x.id}"><div class="row" style="justify-content:space-between"><span class="tk">${esc(x.no)}</span><span class="small muted num">${mins} min</span></div><div class="small muted">${TYPES[x.type]||''}${x.car?' · '+esc(x.car):''}${x.unpaid?' · <b>unpaid</b>':''}</div><ul>${x.lines.map(l=>`<li><b>${l.q}×</b> ${esc(l.n)}${(l.m&&l.m.length)||l.note?` <i class="small" style="color:var(--cardamom)">${esc((l.m||[]).concat(l.note?[l.note]:[]).join(', '))}</i>`:''}</li>`).join('')}</ul></div>`}).join('')||'<div class="small muted" style="padding:8px">Nothing here.</div>'}</div>`}).join('')}</div>`;
+    return `<div class="kcard ${mins>=8&&k!=='ready'?'late':''}" data-a="kAdv" data-kind="${x.kind}" data-id="${x.id}"><div class="row" style="justify-content:space-between"><span class="tk">${esc(x.no)}</span><span class="small muted num">${mins} min</span></div><div class="small muted">${TYPES[x.type]||''}${x.car?' · '+esc(x.car):''}${x.unpaid?' · <b>unpaid</b>':''}${x.web?` · <b style="color:var(--karak)">Online</b> ${esc(x.wn||'')}`:''}</div>${x.addr?`<div class="small">Deliver to: ${esc(x.addr)}</div>`:''}<ul>${x.lines.map(l=>`<li><b>${l.q}×</b> ${esc(l.n)}${(l.m&&l.m.length)||l.note?` <i class="small" style="color:var(--cardamom)">${esc((l.m||[]).concat(l.note?[l.note]:[]).join(', '))}</i>`:''}</li>`).join('')}</ul></div>`}).join('')||'<div class="small muted" style="padding:8px">Nothing here.</div>'}</div>`}).join('')}</div>`;
 };
 async function kAdvance(kind,id){const nx={new:'prep',prep:'ready',ready:'done'};
   if(kind==='o'){const o=S.orders[id];if(!o)return;const s=nx[o.status||'new'];try{await upsert('orders/'+o._doc,{},{o:{[id]:{status:s,['t_'+s]:Date.now()}}})}catch(e){fail(e)}}
-  else{const t=S.tickets[id];if(!t)return;const s=nx[t.status||'new'];try{await queued('tickets/'+id,()=>DB.doc('tickets/'+id).update({status:s}))}catch(e){fail(e)}}}
+  else{const t=S.tickets[id];if(!t)return;const s=nx[t.status||'new'];try{await queued('tickets/'+id,()=>DB.doc('tickets/'+id).update({status:s}));
+    if(t.web&&(s==='prep'||s==='ready')){const ws=s==='prep'?'preparing':'ready';upsert('weborders/'+t.web,{},{status:ws,['t_'+ws]:Date.now()}).catch(()=>{})}}catch(e){fail(e)}}}
 const OLD={};const oldDays={};
 function billsOn(k){if(k>=WIN)return ordersOn(k);if(oldDays[k])return oldDays[k];
   if(oldDays[k]===undefined){oldDays[k]=false;DB.collection('orders').where('date','==',k).get().then(q=>{const out=[];q.docs.forEach(d=>{const o=d.data().o||{};for(const id in o){const x=Object.assign({},o[id],{_doc:d.id});OLD[id]=x;out.push(x)}});
@@ -872,17 +884,18 @@ RENDER.customers=function(){const q=UI.custQ.toLowerCase();const list=custList()
   return `<div class="topbar"><h1>Customers & khata</h1><button class="btn pri" data-a="newCust">+ New customer</button></div>
   <p class="muted" style="margin:-6px 0 12px;max-width:65ch">Regulars, nearby shops and offices that run a monthly tab. Stamps build up on karak and tea; ${S.settings.stampEvery||10} stamps earn a free cup. Total owed: <b class="num">${aed(tot)}</b>.</p>
   <input data-in="custQ" id="custQ" placeholder="Search customers" value="${esc(UI.custQ)}" style="max-width:340px;margin-bottom:10px">
-  ${list.length?`<div class="panel tbl-wrap" style="padding:4px 8px"><table><thead><tr><th>Name</th><th>Company / shop</th><th>Phone</th><th class="r">Owes</th><th class="r">Limit</th><th>Stamps</th></tr></thead><tbody>${list.map(c=>{const b=custBal(c);const over=+c.limit&&b.bal>+c.limit;return `<tr class="click" data-a="custView" data-id="${c.id}"><td><b>${esc(c.name)}</b></td><td>${esc(c.company||'')}</td><td class="num">${esc(c.phone||'')}</td><td class="r" style="color:${over?'var(--bad)':'inherit'}">${b.bal?fmt(b.bal):'—'}</td><td class="r">${+c.limit?fmt(c.limit):'—'}</td><td>${b.stamps?`<span class="pill p-ok">${b.stamps}★</span>`:''}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty"><b>No customers yet</b>Add a regular to give credit (khata) or loyalty stamps.</div>'}`};
+  ${list.length?`<div class="panel tbl-wrap" style="padding:4px 8px"><table><thead><tr><th>Name</th><th>Company / shop</th><th>Phone</th><th class="r">Owes</th><th class="r">Limit</th><th>Stamps</th></tr></thead><tbody>${list.map(c=>{const b=custBal(c);const over=+c.limit&&b.bal>+c.limit;return `<tr class="click" data-a="custView" data-id="${c.id}"><td><b>${esc(c.name)}</b>${c.webOn?' <span class="pill p-ok">Online</span>':''}</td><td>${esc(c.company||'')}</td><td class="num">${esc(c.phone||'')}</td><td class="r" style="color:${over?'var(--bad)':'inherit'}">${b.bal?fmt(b.bal):'—'}</td><td class="r">${+c.limit?fmt(c.limit):'—'}</td><td>${b.stamps?`<span class="pill p-ok">${b.stamps}★</span>`:''}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty"><b>No customers yet</b>Add a regular to give credit (khata) or loyalty stamps.</div>'}`};
 function custForm(id,after){const c=id?S.cust[id]:{};
   openModal(`<div class="dlg-h"><h2>${id?'Edit customer':'New customer'}</h2><button class="btn ghost" data-close>Cancel</button></div>
    <form class="dlg-b" id="cf"><div class="fgrid"><label class="field"><span class="lbl">Name</span><input id="c_name" required value="${esc(c.name||'')}"></label>
    <label class="field"><span class="lbl">Mobile</span><input id="c_phone" inputmode="tel" placeholder="05x xxx xxxx" value="${esc(c.phone||'')}"></label>
    <label class="field"><span class="lbl">Company / shop</span><input id="c_company" value="${esc(c.company||'')}" placeholder="e.g. tailor shop, Meena Bazaar"></label>
    <label class="field"><span class="lbl">Credit limit (AED)</span><input id="c_limit" type="number" min="0" step="10" value="${esc(c.limit||'')}" placeholder="0 = no credit limit"></label></div>
+   <label class="field"><span class="lbl">Delivery address</span><input id="c_addr" value="${esc(c.address||'')}" placeholder="Building, shop or flat no., landmark"></label>
    <label class="field"><span class="lbl">Note</span><input id="c_note" value="${esc(c.note||'')}" placeholder="e.g. pays on the 1st"></label></form>
    <div class="dlg-f">${id?'<button class="btn danger" id="cdel">Remove</button>':''}<button class="btn pri" id="csv">Save</button></div>`,d=>{
     d.querySelector('#csv').onclick=async()=>{const name=d.querySelector('#c_name').value.trim();if(!name){toast('Enter a name.');return}
-      const data={name,phone:d.querySelector('#c_phone').value.trim(),company:d.querySelector('#c_company').value.trim(),limit:+d.querySelector('#c_limit').value||0,note:d.querySelector('#c_note').value.trim()};
+      const data={name,phone:d.querySelector('#c_phone').value.trim(),company:d.querySelector('#c_company').value.trim(),limit:+d.querySelector('#c_limit').value||0,note:d.querySelector('#c_note').value.trim(),address:d.querySelector('#c_addr').value.trim()};
       const cid=id||uid('c');try{if(id)await upsert('cust/'+cid,{tx:{}},data);else await setDoc('cust/'+cid,Object.assign(data,{tx:{},since:Date.now()}));closeModal();toast('Saved');if(after)after(cid)}catch(e){fail(e)}};
     const del=d.querySelector('#cdel');if(del)del.onclick=()=>{const b=custBal(c);if(b.bal>0){toast('Settle the balance before removing.');return}upsert('cust/'+id,{tx:{}},{del:true}).then(()=>{closeModal();toast('Removed')},fail)}})}
 
@@ -943,14 +956,92 @@ function printStatement(D){const st=S.settings,c=D.c;
    <div class="sd-sum"><div><div class="lb">Opening</div>${fmt(D.open)}</div><div><div class="lb">Bills</div>${fmt(D.bill)}</div><div><div class="lb">Paid</div>${fmt(D.paid)}</div><div class="sd-due"><div class="lb">Balance due</div>AED ${fmt(D.close)}</div></div>
    <div class="sd-f">Please check this statement and tell us within 7 days if anything is not right. Thank you for your business.</div></div>`;
   printDoc('statement',html)}
+
+/* ---------- ONLINE ORDERS (registered customers only) ---------- */
+const WEB_ACTIVE=['new','accepted','preparing','ready'];
+const WTYPE={delivery:'Delivery',pickup:'Pickup',car:'Car service'};
+const WPAY={cash:'Cash on delivery',card:'Card on delivery',khata:'Khata (credit)'};
+const WSTAT={new:'Waiting',accepted:'Accepted',preparing:'Preparing',ready:'Ready / on the way'};
+const webList=()=>Object.values(S.web||{}).sort((a,b)=>a.ts-b.ts);
+const webNew=()=>webList().filter(w=>w.status==='new');
+function orderLink(key){return location.origin+location.pathname.replace(/[^/]*$/,'')+'order.html#k='+key}
+let lastNewCount=0,audioCtx=null;
+function beep(){try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();const t=audioCtx.currentTime;
+  [0,.28,.56].forEach((d,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.frequency.value=i===2?1175:880;o.connect(g);g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(.0001,t+d);g.gain.exponentialRampToValueAtTime(.35,t+d+.02);g.gain.exponentialRampToValueAtTime(.0001,t+d+.22);o.start(t+d);o.stop(t+d+.24)})}catch(e){}
+  try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}}
+function webTick(){if(!S.role||S.role==='accountant')return;const n=webNew().length;if(n>lastNewCount){beep();toast(n===1?'New online order':n+' new online orders')}lastNewCount=n}
+setInterval(()=>{if(S.role&&S.role!=='accountant'&&webNew().length)beep()},45000);
+let pubLast='',pubTimer=null;
+function pubData(){const st=S.settings;const stock=stockNow();
+  const items=menuItems().filter(i=>i.active!==false).map(i=>{const x=itemStock(i,stock,0);return{id:i.id,n:i.name,p:+i.price||0,c:i.cat||'',f:!!i.fav,a:x.state!=='out'&&x.state!=='sold'}});
+  return{shop:st.name,addr:st.addr,phone:st.phone||'',on:!!st.webOn,open:st.webOpen||'06:00',close:st.webClose||'23:30',fee:+st.webFee||0,min:+st.webMin||0,max:+st.webMax||300,area:st.webArea||'',
+    stampEvery:+st.stampEvery||0,mods:st.mods||[],cats:(S.menu.cats||[]).map(c=>({id:c.id,n:c.name,s:!!c.stamps})),items}}
+function syncPub(){if(!DB||!DB.fb||!['owner','manager','staff'].includes(S.role)||!S.loaded.menu||!S.loaded.inv||!S.loaded.settings)return;
+  clearTimeout(pubTimer);pubTimer=setTimeout(()=>{const d=pubData();const j=JSON.stringify(d);if(j===pubLast)return;pubLast=j;setDoc('pub/menu',Object.assign(d,{ts:Date.now()})).catch(e=>{pubLast='';console.warn(e)})},1500)}
+function webEst(w){const fee=w.type==='delivery'?(+S.settings.webFee||0):0;return r2((w.lines||[]).reduce((a,l)=>{const it=S.menu.items[l.i];return a+(it?+it.price:+l.p||0)*(+l.q||0)},0)+fee)}
+function webHtml(){const st=S.settings;const list=webList();const nw=list.filter(w=>w.status==='new'),act=list.filter(w=>w.status!=='new');const now=Date.now();
+  const state=!st.webOn?'<span class="pill p-mute">Off</span> Turn it on in Settings':S.webPaused?'<span class="pill p-warn">Paused</span> Customers see "not taking orders right now"':'<span class="pill p-ok">Taking orders</span>'+(st.webOpen?` ${esc(st.webOpen)}–${esc(st.webClose)}`:'');
+  const card=w=>{const c=S.cust[w.cust]||{};const mins=Math.floor((now-w.ts)/60000);const isNew=w.status==='new';
+    return `<div class="wcard ${isNew?'isnew':''}"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div><b>${esc(c.name||w.custName||'Customer')}</b>${c.company?` <span class="small muted">${esc(c.company)}</span>`:''}<div class="small muted num">${esc(c.phone||w.phone||'')}</div></div>
+      <div style="text-align:right"><span class="pill ${isNew?'p-warn':'p-ok'}">${isNew?'New':esc(WSTAT[w.status]||w.status)}${w.ticketNo?' · '+esc(w.ticketNo):''}</span><div class="small muted">${mins<1?'just now':mins+' min ago'}</div></div></div>
+     <div class="small"><b>${esc(WTYPE[w.type]||w.type)}</b>${w.type==='delivery'&&w.address?' · '+esc(w.address):''}${w.type==='car'&&w.car?' · '+esc(w.car):''}</div>
+     <ul class="small">${(w.lines||[]).map(l=>`<li><b>${+l.q||1}×</b> ${esc(l.n)}${l.m&&l.m.length?` <i style="color:var(--cardamom)">${esc(l.m.join(', '))}</i>`:''}</li>`).join('')}</ul>
+     ${w.note?`<div class="small">Note: ${esc(w.note)}</div>`:''}
+     <div class="row" style="justify-content:space-between"><span class="small">${esc(WPAY[w.pay]||w.pay||'')}</span><b class="num">${aed(webEst(w))}</b></div>
+     ${isNew&&S.mode!=='readonly'?`<div class="row"><button class="btn pri" style="flex:1" data-a="webAccept" data-id="${w.id}">Accept</button><button class="btn" data-a="webDecline" data-id="${w.id}">Decline</button></div>`:''}</div>`};
+  return `<div class="row" style="margin-bottom:12px;justify-content:space-between"><span class="small">${state}</span>${st.webOn&&S.mode!=='readonly'?`<button class="btn ${S.webPaused?'pri':''}" data-a="webPause">${S.webPaused?'Resume online orders':'Pause online orders'}</button>`:''}</div>
+   <h2 style="margin:4px 0 8px">New (${nw.length})</h2>${nw.length?`<div class="wgrid">${nw.map(card).join('')}</div>`:'<div class="empty">No new online orders. New ones appear here with a sound.</div>'}
+   <h2 style="margin:16px 0 8px">In progress (${act.length})</h2>${act.length?`<div class="wgrid">${act.map(card).join('')}</div>
+   <p class="small muted">Accepted orders are open bills: move them on the Kitchen board, and charge them from <b>Sell → Open orders</b> when the customer pays.</p>`:'<p class="small muted">Nothing in progress.</p>'}`}
+async function webAccept(id){const w=S.web[id];if(!w)return;
+  try{const fs=await DB.doc('weborders/'+id).get();const fd=fs.data()||{};if(fd.status!=='new'){toast(fd.status==='cancelled'?'The customer cancelled this order.':'This order was already handled.');return}}catch(e){fail(e);return}
+  const lines=[],missing=[];
+  (w.lines||[]).forEach(l=>{const it=S.menu.items[l.i];if(!it||it.del||it.active===false){missing.push(String(l.n||''));return}
+    lines.push({k:uid('l'),i:l.i,n:it.name,p:+it.price,q:Math.max(1,Math.min(50,parseInt(l.q,10)||1)),m:Array.isArray(l.m)?l.m.filter(x=>(S.settings.mods||[]).includes(x)):[],note:'',c:itemCost(Object.assign({id:l.i},it)),cat:it.cat||''})});
+  if(!lines.length){toast('None of these items are on the menu now. Decline the order.');return}
+  if(w.type==='delivery'&&+S.settings.webFee>0)lines.push({k:uid('l'),i:'_deliv',n:'Delivery charge',p:+S.settings.webFee,q:1,m:[],note:'',c:0,cat:''});
+  const c=S.cust[w.cust];const type=w.type==='delivery'?'deliv':w.type==='car'?'car':'take';
+  const note=[w.type==='delivery'&&w.address?'Deliver to: '+w.address:'',w.note?'Customer note: '+w.note:'','Pay: '+(WPAY[w.pay]||w.pay||'cash')].filter(Boolean).join(' · ').slice(0,400);
+  let mx=0;Object.values(S.tickets).forEach(t=>{const m=/^W(\d+)$/.exec(String(t.no||''));if(m&&+m[1]>mx)mx=+m[1]});
+  const tid=uid('t');const now=Date.now();
+  const ticket={id:tid,lines,type,table:'',car:w.type==='car'?String(w.car||'').slice(0,60):'',plat:type==='deliv'?'own':'',cust:c?w.cust:'',disc:null,note,ts:now,by:cashier||'',no:'W'+(mx+1),sent:true,status:'new',sentTs:now,
+    web:id,webPay:w.pay||'cash',webName:(c&&c.name)||w.custName||'',webPhone:(c&&c.phone)||w.phone||'',address:w.type==='delivery'?String(w.address||'').slice(0,200):''};
+  try{await setDoc('tickets/'+tid,clone(ticket));await upsert('weborders/'+id,{},{status:'accepted',ticket:tid,ticketNo:ticket.no,acceptedTs:now,by:cashier||'',missing});
+    toast(missing.length?'Accepted. Some items are no longer on the menu and were left out.':'Accepted and sent to the kitchen')}catch(e){fail(e)}}
+function webDecline(id){const w=S.web[id];if(!w)return;
+  openModal(`<div class="dlg-h"><h2>Decline order?</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b"><p style="margin:0">The customer sees the reason on their phone.</p>
+   <label class="field"><span class="lbl">Reason</span><select id="wdr"><option>Sorry, we are too busy right now</option><option>An item is not available</option><option>Outside our delivery area</option><option>We are closing</option><option>Please call the cafe</option></select></label></div>
+   <div class="dlg-f"><button class="btn" data-close>Keep order</button><button class="btn pri" id="wdg">Decline order</button></div>`,d=>{
+    d.querySelector('#wdg').onclick=async()=>{try{await upsert('weborders/'+id,{},{status:'declined',reason:d.querySelector('#wdr').value,declinedTs:Date.now(),by:cashier||''});closeModal();toast('Order declined')}catch(e){fail(e)}}})}
+function newKey(){const a=new Uint8Array(18);crypto.getRandomValues(a);return Array.from(a,b=>'abcdefghjkmnpqrstuvwxyz23456789'[b%31]).join('')}
+function webLinkHtml(id){const c=S.cust[id];if(!c)return'';
+  if(!DB||!DB.fb)return `<div class="panel" style="background:var(--surface-2)"><h3>Online ordering</h3><p class="small muted" style="margin:4px 0 0">Available once Firebase is connected.</p></div>`;
+  if(S.mode==='readonly')return '';
+  const on=c.webOn&&c.webKey;const link=on?orderLink(c.webKey):'';
+  const msg=`Salam ${c.name}! You can now order from ${S.settings.name} on your phone. Open your private link (please don't share it):\n${link}`;
+  return `<div class="panel stack" style="background:var(--surface-2);gap:8px"><h3>Online ordering</h3>${on?`<p class="small" style="margin:0">On. This private link lets ${esc(c.name)} order from their phone:</p><div class="linkbox">${esc(link)}</div>
+    <div class="row">${c.phone?`<a class="btn grn" target="_blank" rel="noopener" href="${waLink(c.phone,msg)}">Send on WhatsApp</a>`:''}<button class="btn" id="wlCopy">Copy link</button><button class="btn" id="wlNew">New link</button><button class="btn danger" id="wlOff">Turn off</button></div>
+    <p class="small muted" style="margin:0">If the link was shared with someone else, tap <b>New link</b>. The old one stops working at once.${c.address?'':' Add a delivery address in Edit details.'}</p>`
+   :`<p class="small muted" style="margin:0">Give ${esc(c.name)} a private link to order delivery, pickup or car service from their phone. You accept every order before it is made.</p><div><button class="btn pri" id="wlOn">Turn on online ordering</button></div>`}</div>`}
+function bindWebLink(d,id){const c=S.cust[id];if(!c)return;
+  const make=async()=>{const key=newKey();if(c.webKey)await upsert('access/'+c.webKey,{},{active:false}).catch(()=>{});
+    await setDoc('access/'+key,{cust:id,name:c.name,active:true,ts:Date.now()});await upsert('cust/'+id,{tx:{}},{webKey:key,webOn:true});return key};
+  const re=()=>setTimeout(()=>custView(id),350);
+  const on=d.querySelector('#wlOn');if(on)on.onclick=async()=>{on.disabled=true;try{await make();toast('Online ordering turned on');re()}catch(e){fail(e);on.disabled=false}};
+  const nw=d.querySelector('#wlNew');if(nw)nw.onclick=()=>confirmBox('Make a new link?','The current link stops working. Send the new link to the customer.','Make new link',async()=>{await make();toast('New link made');re()});
+  const off=d.querySelector('#wlOff');if(off)off.onclick=()=>confirmBox('Turn off online ordering?',esc(c.name)+' will not be able to order from the link any more.','Turn off',async()=>{await upsert('access/'+c.webKey,{},{active:false});await upsert('cust/'+id,{tx:{}},{webOn:false});toast('Online ordering turned off');re()});
+  const cp=d.querySelector('#wlCopy');if(cp)cp.onclick=()=>copyText(orderLink(c.webKey))}
+
 function custView(id){const c=S.cust[id];if(!c)return;const b=custBal(c);const tx=Object.values(c.tx||{}).filter(t=>t.t!=='stamp').sort((x,y)=>y.ts-x.ts);
   const msg=`Dear ${c.name}, your account at ${S.settings.name} shows AED ${fmt(b.bal)} due as of ${dstr(today())}. Thank you!`;
   openModal(`<div class="dlg-h"><h2>${esc(c.name)}</h2><button class="btn ghost" data-close>Close</button></div>
   <div class="dlg-b"><div class="kpis"><div class="kpi"><div class="lbl">Owes</div><div class="v">${aed(b.bal)}</div></div><div class="kpi"><div class="lbl">Stamps</div><div class="v num">${b.stamps}</div><div class="d">${S.settings.stampEvery} = 1 free cup</div></div></div>
   <div class="row"><button class="btn grn" id="pay">Record payment</button><button class="btn" id="ed">Edit details</button>${c.phone&&b.bal>0?`<a class="btn" target="_blank" rel="noopener" href="${waLink(c.phone,msg)}">WhatsApp reminder</a>`:''}<button class="btn" id="stmt">Print statement</button></div>
+  ${webLinkHtml(id)}
   <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Entry</th><th class="r">Amount</th></tr></thead><tbody>${tx.map(t=>`<tr ${t.t==='credit'&&findBill(id,t)?`class="click" data-bill="${findBill(id,t)}" title="Open this bill"`:''}><td class="num">${new Date(t.ts).toLocaleDateString('en-GB')}</td><td>${t.t==='credit'?'Bill '+esc(t.ref||''):t.t==='pay'?'Payment ('+esc(t.method||'cash')+')':t.t==='redeem'?'Free cup':esc(t.ref||'Adjustment')}</td><td class="r" style="color:${t.t==='pay'?'var(--ok)':'inherit'}">${t.t==='redeem'?'—':(t.t==='pay'?'−':'')+fmt(Math.abs(t.amt))}</td></tr>`).join('')||'<tr><td colspan="3" class="muted">No account entries yet.</td></tr>'}</tbody></table></div></div>`,d=>{
     d.querySelector('#ed').onclick=()=>{closeModal();custForm(id)};d.querySelectorAll('[data-bill]').forEach(r=>r.onclick=()=>viewOrder(r.dataset.bill));
-    d.querySelector('#stmt').onclick=()=>{closeModal();statementDialog(id)};
+    d.querySelector('#stmt').onclick=()=>{closeModal();statementDialog(id)};bindWebLink(d,id);
     d.querySelector('#pay').onclick=()=>{openModal(`<div class="dlg-h"><h2>Payment from ${esc(c.name)}</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b"><p>Balance ${aed(b.bal)}</p><div class="fgrid"><label class="field"><span class="lbl">Amount (AED)</span><input id="pa" type="number" step="0.5" value="${b.bal>0?b.bal:''}"></label><label class="field"><span class="lbl">Paid by</span><select id="pm"><option value="cash">Cash (goes in drawer)</option><option value="card">Card</option><option value="transfer">Bank transfer</option></select></label></div></div><div class="dlg-f"><button class="btn pri" id="pg">Record payment</button></div>`,dd=>{
       dd.querySelector('#pg').onclick=async()=>{const amt=r2(+dd.querySelector('#pa').value||0);if(amt<=0){toast('Enter an amount.');return}
         try{await upsert('cust/'+id,{tx:{}},{tx:{[uid('t')]:{t:'pay',amt,method:dd.querySelector('#pm').value,ts:Date.now(),date:today(),by:cashier}}});closeModal();toast('Payment recorded');setTimeout(()=>custView(id),300)}catch(e){fail(e)}}})}})}
@@ -1319,6 +1410,13 @@ RENDER.setup=function(){const s=S.settings;
    <label class="row small"><input type="checkbox" id="st_ap" ${s.autoPrint?'checked':''}> Print the receipt automatically after each sale</label>
    <label class="field"><span class="lbl">Order options (comma separated)</span><input id="st_mods" value="${esc((s.mods||[]).join(', '))}"></label>
    <label class="field"><span class="lbl">Expense categories (comma separated)</span><input id="st_exp" value="${esc((s.expCats||[]).join(', '))}"></label>
+   <div class="panel stack" style="background:var(--surface-2)"><h3>Online ordering (registered customers only)</h3>
+    <label class="row small"><input type="checkbox" id="st_won" ${s.webOn?'checked':''}> Take online orders from customers who have a private link</label>
+    <div class="fgrid"><label class="field"><span class="lbl">Opens at</span><input id="st_wopen" type="time" value="${esc(s.webOpen||'06:00')}"></label><label class="field"><span class="lbl">Closes at</span><input id="st_wclose" type="time" value="${esc(s.webClose||'23:30')}"></label>
+     <label class="field"><span class="lbl">Delivery charge (AED)</span><input id="st_wfee" type="number" min="0" step="0.5" value="${esc(s.webFee||0)}"></label><label class="field"><span class="lbl">Minimum for delivery (AED)</span><input id="st_wmin" type="number" min="0" step="1" value="${esc(s.webMin||0)}"></label>
+     <label class="field"><span class="lbl">Largest order allowed (AED)</span><input id="st_wmax" type="number" min="10" step="10" value="${esc(s.webMax||300)}"></label></div>
+    <label class="field"><span class="lbl">Delivery area (shown to customers)</span><input id="st_warea" value="${esc(s.webArea||'')}" placeholder="e.g. Meena Bazar, Al Fahidi and Bur Dubai, up to 2 km"></label>
+    <p class="small muted" style="margin:0">Turn on each customer's link in <b>Customers</b>. Orders arrive in <b>Orders → Online</b> with a sound.</p></div>
    <div><div class="lbl" style="margin-bottom:6px">Delivery apps and commission %</div><div class="stack" style="gap:6px">${(s.platforms||[]).map((p,i)=>`<div class="row" style="flex-wrap:nowrap"><input data-pn="${i}" value="${esc(p.name)}" style="flex:2"><input data-pc="${i}" type="number" step="0.5" value="${p.comm}" style="flex:1"><span class="muted">%</span></div>`).join('')}</div></div>
    <div><button class="btn pri">Save settings</button></div></form>
   <div class="panel stack"><h2>This device</h2><p class="small muted" style="margin:0">Token numbers run in one series for the whole shop each day (1, 2, 3…), whichever device rings the bill. Only if two devices often sell at the same moment without internet, give each one a letter so their tokens can never clash (A1, B1…). Leave it empty otherwise.</p>
@@ -1339,6 +1437,8 @@ function teamPanel(){if(!S.role)return '';const canEdit=S.role==='owner';const u
 
 /* ---------- actions ---------- */
 const A={
+  goWeb:()=>{UI.kTab='web';go('orders')},webAccept:d=>webAccept(d.id),webDecline:d=>webDecline(d.id),
+  webPause:()=>{const on=!S.webPaused;setDoc('pub/ctl',{paused:on,by:cashier||'',ts:Date.now()}).then(()=>toast(on?'Online orders paused':'Taking online orders again'),fail)},
   testPrint:()=>{const v=($('#st_paper')||{}).value;const keep=S.settings.paper;if(v)S.settings.paper=v;const t=testReceipt();S.settings.paper=keep;printText('test-receipt.pdf',t,'receipt',v)},
   bannerTog:(d,el)=>el.classList.toggle('open'),
   install:()=>{if(installEvt){installEvt.prompt();installEvt=null;paint()}},
@@ -1353,7 +1453,7 @@ const A={
   'q+':d=>{cart.lines[+d.ix].q++;saveCart();repaintCart()},
   'q-':d=>{const l=cart.lines[+d.ix];l.q--;if(l.q<=0)cart.lines.splice(+d.ix,1);saveCart();repaintCart()},
   editLine:d=>editLine(+d.ix),
-  clear:()=>{if(cart.ticket){confirmBox('Delete open bill?','This removes the saved bill for good. Nothing is charged.','Delete bill',async()=>{await delDoc('tickets/'+cart.ticket);cart=newCart();saveCart();paint()},true)}else{cart=newCart();saveCart();paint()}},
+  clear:()=>{if(cart.ticket){confirmBox('Delete open bill?','This removes the saved bill for good. Nothing is charged.','Delete bill',async()=>{const wt=S.tickets[cart.ticket];await delDoc('tickets/'+cart.ticket);if(wt&&wt.web)upsert('weborders/'+wt.web,{},{status:'declined',reason:'Cancelled by the cafe',declinedTs:Date.now()}).catch(()=>{});cart=newCart();saveCart();paint()},true)}else{cart=newCart();saveCart();paint()}},
   hold:()=>holdCart(false),kitchenSend:()=>holdCart(true),tickets:ticketsDialog,
   pay:()=>{if(!cart.lines.length)return;if(cart.type==='deliv'&&!cart.plat){toast('Choose the delivery app.');return}if(cart.type==='dine'&&!cart.table){toast('Pick a table.');return}if(cart.type==='car'){const ci=$('#carIn');if(ci)cart.car=ci.value.trim();if(!cart.car){toast('Add the car plate so the runner finds it.');return}}payDialog()},
   pickCust:()=>pickCustomer(),pickCashier,
@@ -1408,7 +1508,7 @@ document.addEventListener('submit',async e=>{const f=e.target.dataset.f;if(!f)re
   if(f==='unlock'){if($('#pinIn').value===String(S.settings.managerPin)){ssSet('wk_mgr','1');paint()}else{toast('Wrong PIN');$('#pinIn').value=''}}
   if(f==='settings'){const g=id=>document.getElementById(id).value;const pl=(S.settings.platforms||[]).map((p,i)=>({id:p.id,name:document.querySelector(`[data-pn="${i}"]`).value.trim()||p.name,comm:+document.querySelector(`[data-pc="${i}"]`).value||0}));
     const s={name:g('st_name').trim(),ownerWa:g('st_owa').trim(),cover:+g('st_cover')||7,addr:g('st_addr').trim(),phone:g('st_phone').trim(),trn:g('st_trn').trim(),vat:+g('st_vat')||0,footer:g('st_footer'),licenseExp:g('st_lic'),tables:+g('st_tables')||0,stampEvery:+g('st_stamp')||0,managerPin:g('st_pin').trim(),
-      inclusive:document.getElementById('st_incl').checked,paper:document.getElementById('st_paper').value,docPaper:document.getElementById('st_docp').value,autoPrint:document.getElementById('st_ap').checked,mods:g('st_mods').split(',').map(x=>x.trim()).filter(Boolean),expCats:g('st_exp').split(',').map(x=>x.trim()).filter(Boolean),platforms:pl};
+      inclusive:document.getElementById('st_incl').checked,paper:document.getElementById('st_paper').value,webOn:document.getElementById('st_won').checked,webOpen:g('st_wopen'),webClose:g('st_wclose'),webFee:+g('st_wfee')||0,webMin:+g('st_wmin')||0,webMax:+g('st_wmax')||300,webArea:g('st_warea').trim(),docPaper:document.getElementById('st_docp').value,autoPrint:document.getElementById('st_ap').checked,mods:g('st_mods').split(',').map(x=>x.trim()).filter(Boolean),expCats:g('st_exp').split(',').map(x=>x.trim()).filter(Boolean),platforms:pl};
     if(s.trn&&!/^\d{15}$/.test(s.trn)){toast('A UAE TRN has 15 digits.');return}
     try{await setDoc('cfg/settings',Object.assign({},S.settings,s));if(s.managerPin)ssSet('wk_mgr','1');document.activeElement.blur();toast('Settings saved')}catch(x){fail(x)}}});
 document.addEventListener('change',e=>{const ru=e.target.dataset&&e.target.dataset.role;if(ru){FS.doc('users/'+ru).set({role:e.target.value},{merge:true}).then(()=>toast('Role updated'),x=>toast('Only the owner can change roles.'));return}
@@ -1457,6 +1557,7 @@ async function boot(){applyTheme();if('serviceWorker' in navigator&&location.pro
   const net=()=>{S.offline=!navigator.onLine;if(S.ready||S.auth)paint()};window.addEventListener('online',net);window.addEventListener('offline',net);S.offline=!navigator.onLine;
   AUTH=firebase.auth();
   AUTH.onAuthStateChanged(async u=>{
+    if(u&&u.isAnonymous){AUTH.signOut();return}
     if(!u){if(started){location.reload();return}S.user=null;S.auth='out';paint();return}
     S.user=u;const ref=FS.doc('users/'+u.uid);const owners=(window.OWNER_EMAILS||[]).map(x=>String(x).toLowerCase());const isOwnerEmail=owners.includes((u.email||'').toLowerCase());
     try{const snap=await ref.get();if(!snap.exists)await ref.set({email:u.email,role:isOwnerEmail?'owner':'pending',ts:Date.now()});else if(isOwnerEmail&&snap.data().role!=='owner')await ref.set({role:'owner'},{merge:true})}catch(e){console.warn(e)}
