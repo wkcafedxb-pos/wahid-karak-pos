@@ -627,9 +627,17 @@ function payDialog(){
       }})};
   draw();
 }
+/* Token numbers: Firebase hands out the next number in one atomic step, so two tills can never get the same one.
+   Without internet (or with a till letter set) the device falls back to the highest number it knows + 1. */
+async function claimToken(){const local=nextToken();if(!FS||!DB||!DB.fb||devCode()||S.offline)return local;
+  const day=today();const ref=FS.doc('close/tok_'+day);const localN=parseInt(local,10)||1;
+  try{const n=await Promise.race([FS.runTransaction(async tx=>{const d=await tx.get(ref);const cur=d.exists?(+(d.data()||{}).n||0):0;const n=Math.max(cur+1,localN);tx.set(ref,{n,day},{merge:true});return n}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('slow')),3000))]);return String(n)}
+  catch(e){console.warn('token fallback',e&&e.message);return local}}
 async function finalize(pay,tendered,change,ref){
+  const tokNo=await claimToken();
   const t=calc(cart);const ts=Date.now();const date=dkey(ts);const tk=cart.ticket&&S.tickets[cart.ticket];
-  const o={id:uid('o'),no:nextToken(),ts,date,dev:DEV,type:cart.type,table:cart.table||'',car:cart.car||'',plat:cart.type==='deliv'?cart.plat:'',cust:cart.cust||'',
+  const o={id:uid('o'),no:tokNo,ts,date,dev:DEV,type:cart.type,table:cart.table||'',car:cart.car||'',plat:cart.type==='deliv'?cart.plat:'',cust:cart.cust||'',
     lines:cart.lines.map(l=>({i:l.i,n:l.n,p:l.p,q:l.q,m:l.m||[],note:l.note||'',c:l.c||0,cat:l.cat||''})),
     sub:t.sub,disc:t.disc,net:t.net,vat:t.vat,total:t.total,pay,tendered,change,ref,by:cashier||'',status:tk&&tk.status?tk.status:'new',note:cart.note||''};
   const shard=Math.floor(new Date(ts).getHours()/6);
