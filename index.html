@@ -398,7 +398,7 @@ function subscribe(){
   if(DB.fb&&S.role){DB.collection('weborders').where('status','in',WEB_ACTIVE).onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=Object.assign({id:d.id},d.data()));S.web=m;changed()},onErr);
     DB.doc('pub/ctl').onSnapshot(s=>{S.webPaused=!!(s.data()||{}).paused;changed()},()=>{})}
   DB.doc('cfg/inv').onSnapshot(s=>{const d=s.data()||{};S.inv={items:d.items||{},soldOut:d.soldOut||{}};S.loaded.inv=1;changed()},onErr);
-  DB.doc('cfg/staff').onSnapshot(s=>{const d=s.data()||{};S.staff={items:d.items||{}};changed()},onErr);
+  DB.doc('cfg/staff').onSnapshot(s=>{const d=s.data()||{};S.staff={items:d.items||{},riders:d.riders||[]};changed()},onErr);
   DB.collection('cust').onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.cust=m;changed()},onErr);
   DB.collection('tickets').onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.tickets=m;changed()},onErr);
   DB.collection('orders').where('date','>=',WIN).onSnapshot(q=>{const m={};q.docs.forEach(d=>{const b=d.data();const o=b.o||{};for(const id in o)m[id]=Object.assign({},o[id],{_doc:d.id})});S.orders=m;S.loaded.orders=1;changed()},onErr);
@@ -472,10 +472,10 @@ const STAFF_OK=new Set(['expenses','close']);
 
 /* ---------- shell ---------- */
 function paintRail(){
-  const kcount=kitchenQueue().filter(k=>k.status!=='ready').length+(S.role&&S.role!=='accountant'?webNew().length:0);
+  const kcount=S.duty==='delivery'?myDeliveries().length:kitchenQueue().filter(k=>k.status!=='ready').length+(S.role&&S.role!=='accountant'?webNew().length:0);
   $('#rail').innerHTML=`<div class="brand"><b>Wahid<br>Karak</b><span>POS</span></div>`+
-   VIEWS.map(([k,l])=>`<button class="nav ${UI.view===k?'on':''} ${MOBILE_MAIN.includes(k)?'':'x'}" data-a="go" data-v="${k}" aria-label="${l}">${icon(k)}<span>${l}${k==='orders'&&kcount?` (${kcount})`:''}</span></button>`).join('')+
-   `<button class="nav mob-more" data-a="more" aria-label="More">${icon('more')}<span>More</span></button><div class="spacer"></div>${S.user?`<button class="nav x" data-a="signOut" title="${esc(S.user.email||'')}">${icon('staff')}<span>Sign out</span></button>`:''}`;
+   VIEWS.filter(([k])=>S.duty!=='delivery'||k==='orders').map(([k,l])=>`<button class="nav ${UI.view===k?'on':''} ${MOBILE_MAIN.includes(k)?'':'x'}" data-a="go" data-v="${k}" aria-label="${l}">${icon(k)}<span>${l}${k==='orders'&&kcount?` (${kcount})`:''}</span></button>`).join('')+
+   (S.duty==='delivery'?'':`<button class="nav mob-more" data-a="more" aria-label="More">${icon('more')}<span>More</span></button>`)+`<div class="spacer"></div>${S.user?`<button class="nav ${S.duty==='delivery'?'':'x'}" data-a="signOut" title="${esc(S.user.email||'')}">${icon('staff')}<span>Sign out</span></button>`:''}`;
 }
 function paint(){
   paintRail();
@@ -483,6 +483,7 @@ function paint(){
   document.querySelector('.app').classList.toggle('solo',S.auth==='out'||S.auth==='pending');
   if(S.auth==='out'){v.className='';v.innerHTML=loginHtml();return}
   if(S.auth==='pending'){v.className='';v.innerHTML=pendingHtml();return}
+  if(S.duty==='delivery'&&(UI.view!=='orders'||UI.kTab!=='web')){UI.view='orders';UI.kTab='web'}
   v.className=UI.view==='sell'?'fill':'';
   if(!S.ready){v.innerHTML=`<div class="empty" style="margin-top:20vh"><b>Opening the till…</b>Connecting to your cafe's records.</div>`;return}
   if(LOCKED.has(UI.view)&&!isManagerUnlocked()&&!(S.mode==='readonly'&&RO_OK.has(UI.view))&&!(S.role==='staff'&&STAFF_OK.has(UI.view))){v.innerHTML=lockScreen();return}
@@ -490,7 +491,7 @@ function paint(){
   if(UI.view==='sell')afterSell();
 }
 function modeBanner(){
-  let b='';const wn=S.role&&S.role!=='accountant'?webNew().length:0;
+  let b='';const wn=S.role&&S.role!=='accountant'&&S.duty!=='delivery'?webNew().length:0;
   if(wn&&!(UI.view==='orders'&&UI.kTab==='web'))b+=`<div class="banner webalert" data-a="goWeb" role="button"><b>${wn===1?'New online order':wn+' new online orders'}.</b> Tap here to see and accept.</div>`;
   if(S.mode==='local')b+=`<div class="banner" data-a="bannerTog" title="Tap to read more"><b>Demo mode.</b> Firebase is not connected yet (fill in firebase-config.js), so everything is saved in this browser only.</div>`;
   if(S.mode==='readonly')b+=`<div class="banner" data-a="bannerTog" title="Tap to read more"><b>Accountant view.</b> You can see sales, VAT, purchases and reports, and print or export them. Nothing can be changed from this account.</div>`;
@@ -780,7 +781,7 @@ function kitchenQueue(){const t=today();const out=[];
   Object.values(S.tickets).forEach(k=>{if(k.sent&&k.status!=='done')out.push({kind:'t',id:k.id,no:k.table||k.no,ts:k.sentTs||k.ts,status:k.status||'new',lines:k.lines||[],type:k.type,table:k.table,car:k.car,unpaid:true,web:k.web,wn:k.webName,addr:k.address})});
   return out.sort((a,b)=>a.ts-b.ts)}
 RENDER.orders=function(){
-  const tabs=`<div class="seg"><button class="${UI.kTab==='kitchen'?'on':''}" data-a="kTab" data-v="kitchen">Kitchen board</button>${DB&&DB.fb?`<button class="${UI.kTab==='web'?'on':''}" data-a="kTab" data-v="web">Online${webNew().length?` (${webNew().length})`:''}</button>`:''}<button class="${UI.kTab==='history'?'on':''}" data-a="kTab" data-v="history">Bills</button></div>`;
+  const tabs=`<div class="seg"><button class="${UI.kTab==='kitchen'?'on':''}" data-a="kTab" data-v="kitchen" ${S.duty==='delivery'?'hidden':''}>Kitchen board</button>${DB&&DB.fb?`<button class="${UI.kTab==='web'?'on':''}" data-a="kTab" data-v="web">Online${webNew().length?` (${webNew().length})`:''}</button>`:''}<button class="${UI.kTab==='history'?'on':''}" data-a="kTab" data-v="history" ${S.duty==='delivery'?'hidden':''}>Bills</button></div>`;
   if(UI.kTab==='web')return `<div class="topbar"><h1>Orders</h1>${tabs}</div>`+webHtml();
   if(UI.kTab==='history'){
     const hd=UI.hDate||today();const f=UI.hFilter.toLowerCase();const src=billsOn(hd);
@@ -970,8 +971,11 @@ function beep(){try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAu
   [0,.28,.56].forEach((d,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.frequency.value=i===2?1175:880;o.connect(g);g.connect(audioCtx.destination);
     g.gain.setValueAtTime(.0001,t+d);g.gain.exponentialRampToValueAtTime(.35,t+d+.02);g.gain.exponentialRampToValueAtTime(.0001,t+d+.22);o.start(t+d);o.stop(t+d+.24)})}catch(e){}
   try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}}
-function webTick(){if(!S.role||S.role==='accountant')return;const n=webNew().length;if(n>lastNewCount){beep();toast(n===1?'New online order':n+' new online orders')}lastNewCount=n}
-setInterval(()=>{if(S.role&&S.role!=='accountant'&&webNew().length)beep()},45000);
+const myDeliveries=()=>webList().filter(w=>w.status==='ready'&&w.type==='delivery'&&w.rider&&w.rider===S.myName);
+let mineSeen=null;
+function webTick(){if(!S.role||S.role==='accountant')return;
+  if(S.duty==='delivery'){const ids=myDeliveries().map(w=>w.id);if(mineSeen&&ids.some(id=>!mineSeen.has(id))){beep();toast('New delivery for you')}mineSeen=new Set(ids);return}const n=webNew().length;if(n>lastNewCount){beep();toast(n===1?'New online order':n+' new online orders')}lastNewCount=n}
+setInterval(()=>{if(S.role&&S.role!=='accountant'&&S.duty!=='delivery'&&webNew().length)beep()},45000);
 let pubLast='',pubTimer=null;
 function pubData(){const st=S.settings;const stock=stockNow();
   const items=menuItems().filter(i=>i.active!==false).map(i=>{const x=itemStock(i,stock,0);return{id:i.id,n:i.name,p:+i.price||0,c:i.cat||'',f:!!i.fav,a:x.state!=='out'&&x.state!=='sold'}});
@@ -980,7 +984,8 @@ function pubData(){const st=S.settings;const stock=stockNow();
 function syncPub(){if(!DB||!DB.fb||!['owner','manager','staff'].includes(S.role)||!S.loaded.menu||!S.loaded.inv||!S.loaded.settings)return;
   clearTimeout(pubTimer);pubTimer=setTimeout(()=>{const d=pubData();const j=JSON.stringify(d);if(j===pubLast)return;pubLast=j;setDoc('pub/menu',Object.assign(d,{ts:Date.now()})).catch(e=>{pubLast='';console.warn(e)})},1500)}
 function webEst(w){const fee=w.type==='delivery'?(+S.settings.webFee||0):0;return r2((w.lines||[]).reduce((a,l)=>{const it=S.menu.items[l.i];return a+(it?+it.price:+l.p||0)*(+l.q||0)},0)+fee)}
-function webHtml(){const st=S.settings;const list=webList();const nw=list.filter(w=>w.status==='new'),act=list.filter(w=>w.status!=='new');const now=Date.now();
+function webHtml(){const st=S.settings;const list=webList();const nw=S.duty==='delivery'?[]:list.filter(w=>w.status==='new');let act=list.filter(w=>w.status!=='new');const now=Date.now();
+  if(S.duty==='delivery')act=act.filter(w=>w.type==='delivery').sort((a,b)=>(b.rider===S.myName)-(a.rider===S.myName));
   const state=!st.webOn?'<span class="pill p-mute">Off</span> Turn it on in Settings':S.webPaused?'<span class="pill p-warn">Paused</span> Customers see "not taking orders right now"':'<span class="pill p-ok">Taking orders</span>'+(st.webOpen?` ${esc(st.webOpen)}–${esc(st.webClose)}`:'');
   const card=w=>{const c=S.cust[w.cust]||{};const mins=Math.floor((now-w.ts)/60000);const isNew=w.status==='new';
     return `<div class="wcard ${isNew?'isnew':''}"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div><b>${esc(c.name||w.custName||'Customer')}</b>${c.company?` <span class="small muted">${esc(c.company)}</span>`:''}<div class="small muted num">${esc(c.phone||w.phone||'')}</div></div>
@@ -992,6 +997,10 @@ function webHtml(){const st=S.settings;const list=webList();const nw=list.filter
      ${w.rider&&!isNew?`<div class="small">Delivery by <b>${esc(w.rider)}</b></div>`:''}
      ${isNew&&S.mode!=='readonly'?`<div class="row"><button class="btn pri" style="flex:1" data-a="webAccept" data-id="${w.id}">Accept</button><button class="btn" data-a="webDecline" data-id="${w.id}">Decline</button></div>`:''}
      ${!isNew&&S.mode!=='readonly'?webActions(w,c):''}</div>`};
+  if(S.duty==='delivery'){const mine=act.filter(w=>w.rider===S.myName),rest=act.filter(w=>w.rider!==S.myName);
+    return `<p class="small muted" style="margin:0 0 10px">Signed in as <b>${esc(S.myName||'')}</b>. Your deliveries appear here with a sound. Tap <b>Delivered</b> at the customer's door and choose how they paid.</p>
+     <h2 style="margin:4px 0 8px">My deliveries (${mine.length})</h2>${mine.length?`<div class="wgrid">${mine.map(card).join('')}</div>`:'<div class="empty">Nothing for you right now.</div>'}
+     <h2 style="margin:16px 0 8px">Other delivery orders (${rest.length})</h2>${rest.length?`<div class="wgrid">${rest.map(card).join('')}</div>`:'<p class="small muted">None.</p>'}`}
   return `<div class="row" style="margin-bottom:12px;justify-content:space-between"><span class="small">${state}</span>${st.webOn&&S.mode!=='readonly'?`<button class="btn ${S.webPaused?'pri':''}" data-a="webPause">${S.webPaused?'Resume online orders':'Pause online orders'}</button>`:''}</div>
    <h2 style="margin:4px 0 8px">New (${nw.length})</h2>${nw.length?`<div class="wgrid">${nw.map(card).join('')}</div>`:'<div class="empty">No new online orders. New ones appear here with a sound.</div>'}
    <h2 style="margin:16px 0 8px">In progress (${act.length})</h2>${act.length?`<div class="wgrid">${act.map(card).join('')}</div>
@@ -1034,9 +1043,14 @@ function webSendOut(id){const w=S.web[id];if(!w)return;const t=S.tickets[w.ticke
   const done=async(rider,print)=>{try{if(t&&t.status!=='ready')await queued('tickets/'+t.id,()=>DB.doc('tickets/'+t.id).update({status:'ready'}));
       await upsert('weborders/'+id,{},{status:'ready',t_ready:Date.now(),rider:rider||''});closeModal();toast(w.type==='delivery'?'Out for delivery':'Marked ready');if(print)setTimeout(()=>printWebBill(id),300)}catch(e){fail(e)}};
   if(w.type!=='delivery'){done('',false);return}
-  const riders=staffList().filter(s=>s.active!==false);
+  const names=[];const add=(n,pref)=>{n=String(n||'').trim();if(n&&!names.some(x=>x.n.toLowerCase()===n.toLowerCase()))names.push({n,pref})};
+  if(S.duty==='delivery')add(S.myName,true);
+  Object.values(S.users||{}).forEach(u=>{if(u.duty==='delivery'&&u.role==='staff')add(u.name||(u.email||'').split('@')[0],true)});
+  ((S.staff&&S.staff.riders)||[]).forEach(n=>add(n,true));
+  staffList().filter(x=>x.active!==false).forEach(x=>add(x.name,x.role==='Delivery'));
+  names.sort((a,b)=>(b.pref?1:0)-(a.pref?1:0));const riders=names;
   openModal(`<div class="dlg-h"><h2>Out for delivery</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b">
-   <label class="field"><span class="lbl">Who is delivering?</span><select id="wrd"><option value="">(not set)</option>${riders.map(s=>`<option ${s.role==='Delivery'?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>
+   <label class="field"><span class="lbl">Who is delivering?</span><select id="wrd"><option value="">(not set)</option>${riders.map((r,i)=>`<option ${(S.duty==='delivery'?r.n===S.myName:i===0&&r.pref)?'selected':''}>${esc(r.n)}</option>`).join('')}</select></label>
    <label class="row small"><input type="checkbox" id="wpb" checked> Print the bill to send with the order</label>
    <p class="small muted" style="margin:0">The customer sees "On the way"${riders.length?' with the name of the delivery person':''}.</p></div>
    <div class="dlg-f"><button class="btn pri" id="wgo">Send out</button></div>`,d=>{d.querySelector('#wgo').onclick=()=>done(d.querySelector('#wrd').value,d.querySelector('#wpb').checked)})}
@@ -1469,13 +1483,23 @@ RENDER.setup=function(){const s=S.settings;
   <div class="panel stack"><h2>Backup</h2><p class="small muted" style="margin:0">Save a full copy of the menu, stock, customers, staff and the last two months of bills. Restore puts it back into this till's records.</p>
    <div class="row"><button class="btn" data-a="backup">Save backup file</button><label class="btn">Restore from file<input type="file" id="restoreF" accept=".json,application/json" hidden></label></div>
    <p class="small muted" style="margin:0">Storage: ${S.mode==='local'?'this browser only (demo mode)':'Firebase, shared and synced across your devices'}.</p></div></div>`};
-const ROLES=[['pending','Waiting'],['staff','Staff: sell, kitchen, purchases'],['manager','Manager: everything except team'],['accountant','Accountant: view only'],['disabled','Blocked']];
-function teamPanel(){if(!S.role)return '';const canEdit=S.role==='owner';const us=Object.entries(S.users||{}).map(([id,u])=>Object.assign({id},u)).sort((a,b)=>(a.email||'').localeCompare(b.email||''));
-  return `<div class="panel stack"><h2>Team</h2><p class="small muted" style="margin:0">Staff create their own account on the sign-in page, then appear here. ${canEdit?'Pick their role to let them in.':'Only the owner can change roles.'}</p>
-  <div class="tbl-wrap"><table><thead><tr><th>Email</th><th>Role</th><th>Joined</th></tr></thead><tbody>${us.map(u=>`<tr><td>${esc(u.email||u.id)}${u.id===S.user.uid?' <span class="pill p-mute">you</span>':''}</td><td>${u.role==='owner'?'<b>Owner</b>':`<select data-role="${u.id}" ${canEdit?'':'disabled'}>${ROLES.map(([k,l])=>`<option value="${k}" ${u.role===k?'selected':''}>${l}</option>`).join('')}</select>`}</td><td class="num small">${u.ts?new Date(u.ts).toLocaleDateString('en-GB'):''}</td></tr>`).join('')||'<tr><td colspan="3" class="muted">No team members yet.</td></tr>'}</tbody></table></div></div>`}
+const ROLES=[['pending','Waiting'],['staff','Staff: sell, kitchen, purchases'],['delivery','Delivery: online deliveries only'],['manager','Manager: everything except team'],['accountant','Accountant: view only'],['disabled','Blocked']];
+function teamPanel(){if(!S.role)return '';const canEdit=S.role==='owner';const me=S.user&&S.user.uid;
+  const us=Object.entries(S.users||{}).map(([id,u])=>Object.assign({id},u)).sort((a,b)=>(a.role==='owner'?-1:0)-(b.role==='owner'?-1:0)||(a.name||a.email||'').localeCompare(b.name||b.email||''));
+  const seen={};us.forEach(u=>{const k=(u.email||'').toLowerCase();seen[k]=(seen[k]||0)+1});
+  return `<div class="panel stack"><h2>Team</h2><p class="small muted" style="margin:0">Everyone who signs in. New people create their own account on the sign-in page and appear here as <b>Waiting</b>. ${canEdit?'Type their name and pick a role to let them in.':'Only the owner can change roles.'}</p>
+  <div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th></th></tr></thead><tbody>${us.map(u=>{const rv=u.role==='staff'&&u.duty==='delivery'?'delivery':u.role;const dup=seen[(u.email||'').toLowerCase()]>1;
+    return `<tr><td style="min-width:130px">${canEdit?`<input data-uname="${u.id}" value="${esc(u.name||'')}" placeholder="Name" style="min-height:34px;padding:5px 8px">`:esc(u.name||'')}</td>
+    <td>${esc(u.email||u.id)}${u.id===me?' <span class="pill p-mute">you</span>':''}${dup?' <span class="pill p-warn">duplicate</span>':''}</td>
+    <td style="min-width:200px">${u.role==='owner'?'<b>Owner</b>':`<select data-role="${u.id}" ${canEdit?'':'disabled'}>${ROLES.map(([k,l])=>`<option value="${k}" ${rv===k?'selected':''}>${l}</option>`).join('')}</select>`}</td>
+    <td class="num small">${u.ts?new Date(u.ts).toLocaleDateString('en-GB'):''}</td>
+    <td>${canEdit&&u.role!=='owner'&&u.id!==me?`<button class="btn sm ghost danger" data-a="teamRemove" data-id="${u.id}" title="Remove from the team">Remove</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="5" class="muted">No team members yet.</td></tr>'}</tbody></table></div>
+  <p class="small muted" style="margin:0"><b>Delivery</b> people see only online orders on their phone: they mark <i>Out for delivery</i>, <i>Delivered</i> and the payment, and get a sound when a delivery is given to them. <b>Remove</b> takes someone off the list; if they sign in again they come back as Waiting.</p></div>`}
+
 
 /* ---------- actions ---------- */
 const A={
+  teamRemove:d=>{const u=(S.users||{})[d.id]||{};confirmBox('Remove from the team?',esc((u.name?u.name+' · ':'')+(u.email||''))+' will no longer be able to use the POS. If they sign in again, they appear as Waiting.','Remove',()=>FS.doc('users/'+d.id).delete().then(()=>toast('Removed')))},
   goWeb:()=>{UI.kTab='web';go('orders')},webOut:d=>webSendOut(d.id),webDone:d=>webDeliver(d.id),webPrint:d=>printWebBill(d.id),webAccept:d=>webAccept(d.id),webDecline:d=>webDecline(d.id),
   webPause:()=>{const on=!S.webPaused;setDoc('pub/ctl',{paused:on,by:cashier||'',ts:Date.now()}).then(()=>toast(on?'Online orders paused':'Taking online orders again'),fail)},
   testPrint:()=>{const v=($('#st_paper')||{}).value;const keep=S.settings.paper;if(v)S.settings.paper=v;const t=testReceipt();S.settings.paper=keep;printText('test-receipt.pdf',t,'receipt',v)},
@@ -1550,7 +1574,8 @@ document.addEventListener('submit',async e=>{const f=e.target.dataset.f;if(!f)re
       inclusive:document.getElementById('st_incl').checked,paper:document.getElementById('st_paper').value,webOn:document.getElementById('st_won').checked,webOpen:g('st_wopen'),webClose:g('st_wclose'),webFee:+g('st_wfee')||0,webMin:+g('st_wmin')||0,webMax:+g('st_wmax')||300,webArea:g('st_warea').trim(),docPaper:document.getElementById('st_docp').value,autoPrint:document.getElementById('st_ap').checked,mods:g('st_mods').split(',').map(x=>x.trim()).filter(Boolean),expCats:g('st_exp').split(',').map(x=>x.trim()).filter(Boolean),platforms:pl};
     if(s.trn&&!/^\d{15}$/.test(s.trn)){toast('A UAE TRN has 15 digits.');return}
     try{await setDoc('cfg/settings',Object.assign({},S.settings,s));if(s.managerPin)ssSet('wk_mgr','1');document.activeElement.blur();toast('Settings saved')}catch(x){fail(x)}}});
-document.addEventListener('change',e=>{const ru=e.target.dataset&&e.target.dataset.role;if(ru){FS.doc('users/'+ru).set({role:e.target.value},{merge:true}).then(()=>toast('Role updated'),x=>toast('Only the owner can change roles.'));return}
+document.addEventListener('change',e=>{const ru=e.target.dataset&&e.target.dataset.role;if(ru){const v=e.target.value;FS.doc('users/'+ru).set(v==='delivery'?{role:'staff',duty:'delivery'}:{role:v,duty:''},{merge:true}).then(()=>toast('Role updated'),x=>toast('Only the owner can change roles.'));return}
+  const un=e.target.dataset&&e.target.dataset.uname;if(un){FS.doc('users/'+un).set({name:e.target.value.trim().slice(0,40)},{merge:true}).then(()=>toast('Name saved'),x=>toast('Only the owner can change names.'));return}
   if(e.target.id!=='restoreF')return;const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=()=>{let data;try{data=JSON.parse(r.result)}catch(x){toast('That file is not a backup.');return}
   if(data.app!=='wahid-karak-pos'){toast('That file is not a Wahid Karak backup.');return}
   confirmBox('Restore backup?',`Backup from ${esc(data.at)}. Menu, stock, staff, settings and customers are replaced; bills and expenses are added back.`,'Restore',async()=>{
@@ -1600,15 +1625,21 @@ async function boot(){applyTheme();if('serviceWorker' in navigator&&location.pro
     if(!u){if(started){location.reload();return}S.user=null;S.auth='out';paint();return}
     S.user=u;const ref=FS.doc('users/'+u.uid);const owners=(window.OWNER_EMAILS||[]).map(x=>String(x).toLowerCase());const isOwnerEmail=owners.includes((u.email||'').toLowerCase());
     try{const snap=await ref.get();if(!snap.exists)await ref.set({email:u.email,role:isOwnerEmail?'owner':'pending',ts:Date.now()});else if(isOwnerEmail&&snap.data().role!=='owner')await ref.set({role:'owner'},{merge:true})}catch(e){console.warn(e)}
-    ref.onSnapshot(s=>{const r=(s.data()||{}).role||'pending';
-      if(started&&r!==S.role){location.reload();return}
-      if(started)return;
+    ref.onSnapshot(s=>{const ud=s.data()||{};const r=ud.role||'pending';const duty=ud.duty||'';
+      if(started&&(r!==S.role||duty!==S.duty)){location.reload();return}
+      S.myName=ud.name||(u.email||'').split('@')[0];
+      if(started){paint();return}
+      S.duty=duty;if(duty==='delivery'){UI.view='orders';UI.kTab='web'}
       S.role=r;
       if(r==='pending'||r==='disabled'||!['owner','manager','staff','accountant'].includes(r)){S.auth='pending';paint();return}
       S.auth='in';started=true;S.mode=r==='accountant'?'readonly':'cloud';
       if(r==='accountant'&&!VIEWS.some(v=>v[0]===location.hash.slice(1)))UI.view='reports';
       DB=FirebaseDB(FS);subscribe();
-      if(r==='owner'||r==='manager')FS.collection('users').onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.users=m;changed()},()=>{});
+      if(r==='owner'||r==='manager')FS.collection('users').onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.users=m;
+        // share delivery people's names with the other tills (they can't read the team list)
+        const rd=Object.values(m).filter(x=>x.role==='staff'&&x.duty==='delivery').map(x=>x.name||(x.email||'').split('@')[0]).sort();
+        if(S.loaded.settings&&JSON.stringify(rd)!==JSON.stringify((S.staff&&S.staff.riders)||[]))upsert('cfg/staff',{items:{}},{riders:rd}).catch(()=>{});
+        changed()},()=>{});
       setTimeout(()=>{if(!S.ready){S.ready=true;paint()}},6000)},
       e=>{toast('Could not read your account. Check the Firestore rules.');console.error(e)})});
 }
