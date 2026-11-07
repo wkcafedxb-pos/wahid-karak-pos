@@ -1204,6 +1204,19 @@ function stockCard(id){const v=S.inv.items[id];if(!v)return;const st=stockNow()[
   ${mv.length?`<div><h3>Recent wastage & counts</h3><table><tbody>${mv.map(m=>`<tr><td class="num">${dstr(m.date)}</td><td>${m.t==='waste'?'Wasted · '+esc(m.reason):'Count'}</td><td class="r">${m.t==='waste'?'−'+fmt(m.q):fmt(m.diff)}</td></tr>`).join('')}</tbody></table></div>`:''}</div>`,dd=>{
    dd.querySelector('[data-k=recv]').onclick=()=>purForm({lines:[{i:id}],sup:v.sup});dd.querySelector('[data-k=count]').onclick=()=>countForm(id);dd.querySelector('[data-k=waste]').onclick=()=>wasteForm(id);dd.querySelector('[data-k=edit]').onclick=()=>invForm(id)})}
 
+/* last price paid for a material, shown while entering a purchase */
+function lastPriceFor(id,q,amt){const v=id&&S.inv.items[id];if(!v)return{ph:'',html:''};const u=esc(v.unit||'');
+  const h=priceHistory(id);const last=h[0];const qn=+q||0;
+  let unit,html;
+  if(last){unit=last.unit;html=`Last bought ${dstr(last.date)} from ${esc(supName(last.sup))}: <b class="num">AED ${fmt(unit)}</b> per ${u}`+(h[1]?` <span class="muted">(before: ${fmt(h[1].unit)})</span>`:'')}
+  else if(+v.cost>0){unit=+v.cost;html=`<span class="muted">No purchase recorded yet. Average cost: AED ${fmt(unit)} per ${u}</span>`}
+  else return{ph:'',html:'<span class="muted">No price history for this material yet.</span>'};
+  const ph=qn>0?fmt(unit*qn).replace(/,/g,''):'';
+  if(qn>0&&+amt>0&&unit>0){const now=+amt/qn;const ch=(now-unit)/unit;
+    if(Math.abs(ch)>=0.005)html+=` · now <b class="num">${fmt(now)}</b> per ${u} <span class="pill ${ch>0?'p-bad':'p-ok'}">${ch>0?'▲ up':'▼ down'} ${Math.abs(Math.round(ch*100))}%</span>`;
+    else html+=' · <span class="pill p-mute">same price</span>'}
+  else if(qn>0)html+=` · expected about <b class="num">AED ${fmt(unit*qn)}</b> for ${fmt(qn)} ${u}`;
+  return{ph,html}}
 function purForm(pre){pre=pre||{};let lines=(pre.lines||[{}]).map(l=>({i:l.i||'',q:l.q||'',amt:l.amt||'',exp:l.exp||''}));
   const sups=supList();let sup=pre.sup||'';
   const draw=()=>{const opts=invItems().map(v=>`<option value="${v.id}">${esc(v.name)} (${esc(v.unit)})</option>`).join('');
@@ -1211,14 +1224,16 @@ function purForm(pre){pre=pre||{};let lines=(pre.lines||[{}]).map(l=>({i:l.i||''
    <div class="dlg-b"><div class="fgrid"><label class="field"><span class="lbl">Supplier</span><select id="p_sup"><option value="">— choose —</option>${sups.map(s=>`<option value="${s.id}" ${s.id===sup?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>
     <label class="field"><span class="lbl">Supplier invoice no.</span><input id="p_inv" value="${esc(pre.inv||'')}" placeholder="e.g. INV-4471"></label>
     <label class="field"><span class="lbl">Date</span><input id="p_date" type="date" value="${today()}"></label></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Material</th><th>Qty</th><th>Amount excl. VAT</th><th>Use by</th><th></th></tr></thead><tbody>${lines.map((l,ix)=>`<tr><td style="min-width:160px"><select data-li="${ix}" data-f="i"><option value="">—</option>${opts.replace(`value="${l.i}"`,`value="${l.i}" selected`)}</select></td><td style="min-width:80px"><input data-li="${ix}" data-f="q" type="number" step="any" value="${esc(l.q)}"></td><td style="min-width:100px"><input data-li="${ix}" data-f="amt" type="number" step="0.01" value="${esc(l.amt)}"></td><td style="min-width:130px"><input data-li="${ix}" data-f="exp" type="date" value="${esc(l.exp)}"></td><td><button class="btn sm ghost" data-rmline="${ix}" aria-label="Remove line">✕</button></td></tr>`).join('')}</tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Material</th><th>Qty</th><th>Amount excl. VAT</th><th>Use by</th><th></th></tr></thead><tbody>${lines.map((l,ix)=>`<tr><td style="min-width:160px"><select data-li="${ix}" data-f="i"><option value="">—</option>${opts.replace(`value="${l.i}"`,`value="${l.i}" selected`)}</select></td><td style="min-width:80px"><input data-li="${ix}" data-f="q" type="number" step="any" value="${esc(l.q)}"></td><td style="min-width:100px"><input data-li="${ix}" data-f="amt" type="number" step="0.01" value="${esc(l.amt)}" placeholder="${lastPriceFor(l.i,l.q).ph}"></td><td style="min-width:130px"><input data-li="${ix}" data-f="exp" type="date" value="${esc(l.exp)}"></td><td><button class="btn sm ghost" data-rmline="${ix}" aria-label="Remove line">✕</button></td></tr>
+     <tr><td colspan="5" style="padding-top:0;border-bottom:1px solid var(--line)"><div class="small" id="lph${ix}" style="position:sticky;left:0;max-width:min(560px,calc(100vw - 56px));white-space:normal;line-height:1.5">${lastPriceFor(l.i,l.q,l.amt).html}</div></td></tr>`).join('')}</tbody></table></div>
     <div><button class="btn sm" id="addl">+ Line</button></div>
     <label class="row small"><input type="checkbox" id="p_vat" ${pre.vat===false?'':'checked'}> Tax invoice with ${S.settings.vat}% VAT</label>
     <label class="field"><span class="lbl">Payment</span><select id="p_pay"><option value="credit">On credit — pay supplier later</option><option value="cash">Paid cash from the drawer</option><option value="cashout">Paid cash (owner, not from drawer)</option><option value="card">Paid by card</option><option value="bank">Bank transfer</option></select></label>
     <div class="tl total"><span>Total</span><span id="p_tot">AED 0.00</span></div></div>
    <div class="dlg-f"><button class="btn pri" id="pgo">Save & add to stock</button></div>`,d=>{
     const tot=()=>{const sub=lines.reduce((s,l)=>s+(+l.amt||0),0);const vat=d.querySelector('#p_vat').checked?r2(sub*(+S.settings.vat||0)/100):0;d.querySelector('#p_tot').textContent=aed(sub+vat);return{sub:r2(sub),vat}};
-    d.querySelectorAll('[data-li]').forEach(x=>x.oninput=x.onchange=()=>{lines[+x.dataset.li][x.dataset.f]=x.value;tot()});
+    d.querySelectorAll('[data-li]').forEach(x=>x.oninput=x.onchange=()=>{const ix=+x.dataset.li;const l=lines[ix];l[x.dataset.f]=x.value;tot();
+      const lp=lastPriceFor(l.i,l.q,l.amt);const h=d.querySelector('#lph'+ix);if(h)h.innerHTML=lp.html;const a=d.querySelector(`[data-li="${ix}"][data-f="amt"]`);if(a)a.placeholder=lp.ph});
     d.querySelector('#p_vat').onchange=tot;tot();
     d.querySelector('#p_sup').onchange=e=>{sup=e.target.value};
     d.querySelector('#addl').onclick=()=>{sup=d.querySelector('#p_sup').value;pre.inv=d.querySelector('#p_inv').value;lines.push({i:'',q:'',amt:'',exp:''});draw()};
