@@ -438,7 +438,10 @@ const PAYN={cash:'Cash',card:'Card',credit:'Credit (khata)',platform:'Platform'}
 function staffName(id){const s=S.staff.items[id];return s?s.name:(id?'—':'Counter')}
 function isManagerUnlocked(){if(S.role)return S.role==='owner'||S.role==='manager'||(!!S.settings.managerPin&&ssGet('wk_mgr')==='1');return !S.settings.managerPin||ssGet('wk_mgr')==='1'}
 function devCode(){return lsGet('wk_devcode','')}
-function nextToken(){const t=today();const mine=Object.values(S.orders).filter(o=>o.date===t&&o.dev===DEV).length;return devCode()+(mine+1)}
+function nextToken(){const t=today();const dc=devCode();const todays=Object.values(S.orders).filter(o=>o.date===t);let m=0;
+  // one running number for the whole shop each day; a till letter (A, B…) keeps its own series
+  todays.forEach(o=>{const x=String(o.no||'');if(dc?x.startsWith(dc)&&/^\d+$/.test(x.slice(dc.length)):/^\d+$/.test(x)){const n=+(dc?x.slice(dc.length):x);if(n>m)m=n}});
+  return dc+(m+1)}
 
 /* ---------- icons ---------- */
 const IC={sell:'<path d="M3 4h2l2.4 11h10.8l2.3-8H6.1"/><circle cx="9" cy="19.5" r="1.5"/><circle cx="17" cy="19.5" r="1.5"/>',
@@ -1310,7 +1313,7 @@ RENDER.setup=function(){const s=S.settings;
    <label class="field"><span class="lbl">Expense categories (comma separated)</span><input id="st_exp" value="${esc((s.expCats||[]).join(', '))}"></label>
    <div><div class="lbl" style="margin-bottom:6px">Delivery apps and commission %</div><div class="stack" style="gap:6px">${(s.platforms||[]).map((p,i)=>`<div class="row" style="flex-wrap:nowrap"><input data-pn="${i}" value="${esc(p.name)}" style="flex:2"><input data-pc="${i}" type="number" step="0.5" value="${p.comm}" style="flex:1"><span class="muted">%</span></div>`).join('')}</div></div>
    <div><button class="btn pri">Save settings</button></div></form>
-  <div class="panel stack"><h2>This device</h2><p class="small muted" style="margin:0">If two tills ring at once, give each a letter so token numbers don't clash (A1, B1…).</p>
+  <div class="panel stack"><h2>This device</h2><p class="small muted" style="margin:0">Token numbers run in one series for the whole shop each day (1, 2, 3…), whichever device rings the bill. Only if two devices often sell at the same moment without internet, give each one a letter so their tokens can never clash (A1, B1…). Leave it empty otherwise.</p>
    <div class="row" style="flex-wrap:nowrap"><input id="devc" maxlength="2" value="${esc(devCode())}" placeholder="Till letter, e.g. A" style="max-width:160px"><button class="btn" data-a="saveDev">Save</button></div>
    <label class="row small"><input type="checkbox" id="wakeT" ${lsGet('wk_wake',false)?'checked':''}> Keep the screen on (counter tablet or phone)</label>
    ${INSTALL_HTML()}
