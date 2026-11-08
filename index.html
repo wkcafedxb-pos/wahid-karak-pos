@@ -676,10 +676,25 @@ function riderNames(){const names=[];const add=(n,pref)=>{n=String(n||'').trim()
   ((S.staff&&S.staff.riders)||[]).forEach(n=>add(n,true));
   staffList().filter(x=>x.active!==false).forEach(x=>add(x.name,x.role==='Delivery'));
   return names.sort((a,b)=>(b.pref?1:0)-(a.pref?1:0))}
-function riderStats(orders){const r={};for(const o of orders){if(o.void||!o.rider)continue;const x=r[o.rider]||(r[o.rider]={n:0,amt:0,cash:0,card:0,held:0,mins:0,mc:0});
-    x.n++;x.amt+=o.total;x.cash+=o.pay.cash||0;x.card+=o.pay.card||0;if(o.collector===o.rider)x.held+=o.pay.cash||0;
+function riderStats(orders){const r={};for(const o of orders){if(o.void||!o.rider)continue;const x=r[o.rider]||(r[o.rider]={n:0,amt:0,cash:0,card:0,held:0,handed:0,mins:0,mc:0});
+    x.n++;x.amt+=o.total;x.cash+=o.pay.cash||0;x.card+=o.pay.card||0;if(o.collector&&o.pay.cash){if(o.handed)x.handed+=o.pay.cash;else x.held+=o.pay.cash}
     if(o.outTs&&o.delivTs&&o.delivTs>o.outTs){x.mins+=(o.delivTs-o.outTs)/60000;x.mc++}}
   return r}
+/* cash a delivery person collected at the door and has not yet given to the counter (last 2 months) */
+function cashWith(name){return Object.values(S.orders).filter(o=>!o.void&&o.collector===name&&o.pay&&o.pay.cash&&!o.handed).sort((a,b)=>a.ts-b.ts)}
+function ridersHolding(){const m={};Object.values(S.orders).forEach(o=>{if(!o.void&&o.collector&&o.pay&&o.pay.cash&&!o.handed)m[o.collector]=r2((m[o.collector]||0)+o.pay.cash)});return m}
+function receiveCash(name){const list=cashWith(name);if(!list.length){toast(name+' has no cash to hand over.');return}const tot=r2(list.reduce((a,o)=>a+o.pay.cash,0));
+  openModal(`<div class="dlg-h"><h2>Receive cash from ${esc(name)}</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b">
+   <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Bill</th><th>Customer</th><th class="r">Cash</th></tr></thead><tbody>${list.map(o=>`<tr><td class="num">${new Date(o.ts).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} ${tstr(o.ts)}</td><td class="num">${esc(o.no)}</td><td>${esc((S.cust[o.cust]||{}).name||'Counter order')}</td><td class="r">${fmt(o.pay.cash)}</td></tr>`).join('')}</tbody></table></div>
+   <div class="tl total"><span>${esc(name)} should hand over</span><span>${aed(tot)}</span></div>
+   <label class="field"><span class="lbl">Cash actually received (AED)</span><input id="rcAmt" type="number" step="0.25" inputmode="decimal" value="${tot}"></label><p class="small muted" style="margin:0" id="rcMsg">Count the cash, then confirm. It goes into today's drawer.</p></div>
+   <div class="dlg-f"><button class="btn pri" id="rcGo">Confirm cash received</button></div>`,d=>{
+    const amt=d.querySelector('#rcAmt');amt.oninput=()=>{const diff=r2((+amt.value||0)-tot);const m=d.querySelector('#rcMsg');m.textContent=Math.abs(diff)<0.005?'Count the cash, then confirm. It goes into the drawer for today.':(diff<0?'Short by '+aed(-diff)+'. The difference is noted on the handover.':'Extra '+aed(diff)+'. The difference is noted on the handover.');m.style.color=Math.abs(diff)<0.005?'':'var(--bad)'};
+    d.querySelector('#rcGo').onclick=async()=>{const got=r2(+amt.value||0);d.querySelector('#rcGo').disabled=true;const ts=Date.now();const hid=uid('h');const by=S.myName||staffName(cashier)||'';
+      try{const docs={};list.forEach(o=>{(docs[o._doc]=docs[o._doc]||{})[o.id]={handed:ts,handedTo:by,handId:hid}});
+        for(const doc in docs)await upsert('orders/'+doc,{},{o:docs[doc]});
+        await upsert('close/'+today(),{date:today()},{date:today(),hand:{[hid]:{rider:name,expected:tot,got,diff:r2(got-tot),n:list.length,ts,by}}});
+        closeModal();toast(`Received ${aed(got)} from ${name}`+(Math.abs(got-tot)>=0.005?` (${got<tot?'short':'extra'} ${aed(Math.abs(got-tot))})`:''))}catch(e){fail(e);d.querySelector('#rcGo').disabled=false}}})}
 function receiptText(o){
   const W=paperW();const st=S.settings;const L=[];const ctr=s=>{s=String(s);const p=Math.max(0,Math.floor((W-s.length)/2));return ' '.repeat(p)+s};
   const lr=(a,b)=>{a=String(a);b=String(b);const sp=W-a.length-b.length;return sp>=1?a+' '.repeat(sp)+b:a+'\n'+' '.repeat(Math.max(0,W-b.length))+b};
@@ -816,7 +831,7 @@ RENDER.orders=function(){
 };
 async function kAdvance(kind,id){const nx={new:'prep',prep:'ready',ready:'done'};
   if(kind==='o'){const o=S.orders[id];if(!o)return;const s=nx[o.status||'new'];try{await upsert('orders/'+o._doc,{},{o:{[id]:{status:s,['t_'+s]:Date.now()}}})}catch(e){fail(e)}}
-  else{const t=S.tickets[id];if(!t)return;const s=nx[t.status||'new'];try{await queued('tickets/'+id,()=>DB.doc('tickets/'+id).update({status:s}));
+  else{const t=S.tickets[id];if(!t)return;const s=nx[t.status||'new'];try{await queued('tickets/'+id,()=>DB.doc('tickets/'+id).update(t.web&&s==='ready'&&!t.outTs?{status:s,outTs:Date.now()}:{status:s}));
     if(t.web&&(s==='prep'||s==='ready')){const ws=s==='prep'?'preparing':'ready';upsert('weborders/'+t.web,{},{status:ws,['t_'+ws]:Date.now()}).catch(()=>{})}}catch(e){fail(e)}}}
 const OLD={};const oldDays={};
 function billsOn(k){if(k>=WIN)return ordersOn(k);if(oldDays[k])return oldDays[k];
@@ -989,7 +1004,7 @@ function beep(){try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAu
   [0,.28,.56].forEach((d,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.frequency.value=i===2?1175:880;o.connect(g);g.connect(audioCtx.destination);
     g.gain.setValueAtTime(.0001,t+d);g.gain.exponentialRampToValueAtTime(.35,t+d+.02);g.gain.exponentialRampToValueAtTime(.0001,t+d+.22);o.start(t+d);o.stop(t+d+.24)})}catch(e){}
   try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}}
-const myDeliveries=()=>webList().filter(w=>w.status==='ready'&&w.type==='delivery'&&w.rider&&w.rider===S.myName);
+const myDeliveries=()=>webList().filter(w=>['accepted','preparing','ready'].includes(w.status)&&w.type==='delivery'&&w.rider&&w.rider===S.myName);
 let mineSeen=null;
 function webTick(){if(!S.role||S.role==='accountant')return;
   if(S.duty==='delivery'){const ids=myDeliveries().map(w=>w.id);if(mineSeen&&ids.some(id=>!mineSeen.has(id))){beep();toast('New delivery for you')}mineSeen=new Set(ids);return}const n=webNew().length;if(n>lastNewCount){beep();toast(n===1?'New online order':n+' new online orders')}lastNewCount=n}
@@ -1003,7 +1018,7 @@ function syncPub(){if(!DB||!DB.fb||!['owner','manager','staff'].includes(S.role)
   clearTimeout(pubTimer);pubTimer=setTimeout(()=>{const d=pubData();const j=JSON.stringify(d);if(j===pubLast)return;pubLast=j;setDoc('pub/menu',Object.assign(d,{ts:Date.now()})).catch(e=>{pubLast='';console.warn(e)})},1500)}
 function webEst(w){const fee=w.type==='delivery'?(+S.settings.webFee||0):0;return r2((w.lines||[]).reduce((a,l)=>{const it=S.menu.items[l.i];return a+(it?+it.price:+l.p||0)*(+l.q||0)},0)+fee)}
 function webHtml(){const st=S.settings;const list=webList();const nw=S.duty==='delivery'?[]:list.filter(w=>w.status==='new');let act=list.filter(w=>w.status!=='new');const now=Date.now();
-  if(S.duty==='delivery')act=act.filter(w=>w.type==='delivery').sort((a,b)=>(b.rider===S.myName)-(a.rider===S.myName));
+  if(S.duty==='delivery')act=act.filter(w=>w.type==='delivery'&&(w.status!=='delivered'||w.rider===S.myName)).sort((a,b)=>(b.rider===S.myName)-(a.rider===S.myName));
   const state=!st.webOn?'<span class="pill p-mute">Off</span> Turn it on in Settings':S.webPaused?'<span class="pill p-warn">Paused</span> Customers see "not taking orders right now"':'<span class="pill p-ok">Taking orders</span>'+(st.webOpen?` ${esc(st.webOpen)}–${esc(st.webClose)}`:'');
   const card=w=>{const c=S.cust[w.cust]||{};const mins=Math.floor((now-w.ts)/60000);const isNew=w.status==='new';
     return `<div class="wcard ${isNew?'isnew':''}"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div><b>${esc(c.name||w.custName||'Customer')}</b>${c.company?` <span class="small muted">${esc(c.company)}</span>`:''}<div class="small muted num">${esc(c.phone||w.phone||'')}</div></div>
@@ -1012,20 +1027,21 @@ function webHtml(){const st=S.settings;const list=webList();const nw=S.duty==='d
      <ul class="small">${(w.lines||[]).map(l=>`<li><b>${+l.q||1}×</b> ${esc(l.n)}${l.m&&l.m.length?` <i style="color:var(--cardamom)">${esc(l.m.join(', '))}</i>`:''}</li>`).join('')}</ul>
      ${w.note?`<div class="small">Note: ${esc(w.note)}</div>`:''}
      <div class="row" style="justify-content:space-between"><span class="small">${esc(WPAY[w.pay]||w.pay||'')}</span><b class="num">${aed(webEst(w))}</b></div>
-     ${w.rider&&!isNew?`<div class="small">Delivery by <b>${esc(w.rider)}</b></div>`:''}
+     ${!isNew&&w.type==='delivery'&&S.duty!=='delivery'&&S.mode!=='readonly'&&w.status!=='delivered'?`<label class="row small" style="flex-wrap:nowrap">Delivery by <select data-wrider="${w.id}" style="min-height:34px;padding:4px 8px;flex:1"><option value="">Choose…</option>${riderNames().map(r=>`<option ${w.rider===r.n?'selected':''}>${esc(r.n)}</option>`).join('')}</select></label>`:w.rider&&!isNew?`<div class="small">Delivery by <b>${esc(w.rider)}</b></div>`:''}
      ${isNew&&S.mode!=='readonly'?`<div class="row"><button class="btn pri" style="flex:1" data-a="webAccept" data-id="${w.id}">Accept</button><button class="btn" data-a="webDecline" data-id="${w.id}">Decline</button></div>`:''}
      ${!isNew&&S.mode!=='readonly'?webActions(w,c):''}</div>`};
   if(S.duty==='delivery'){const mine=act.filter(w=>w.rider===S.myName),rest=act.filter(w=>w.rider!==S.myName);
     const td=today(),mo=td.slice(0,7);const allMine=Object.values(S.orders).filter(o=>!o.void&&o.rider===S.myName);
-    const tdy=allMine.filter(o=>o.date===td).sort((x,y)=>y.ts-x.ts);const st=riderStats(tdy)[S.myName]||{n:0,amt:0,cash:0,card:0,held:0,mins:0,mc:0};const mon=allMine.filter(o=>o.date.slice(0,7)===mo).length;
+    const tdy=allMine.filter(o=>o.date===td).sort((x,y)=>y.ts-x.ts);const st=riderStats(tdy)[S.myName]||{n:0,amt:0,cash:0,card:0,held:0,handed:0,mins:0,mc:0};const holding=cashWith(S.myName);const held=r2(holding.reduce((a,o)=>a+o.pay.cash,0));const mon=allMine.filter(o=>o.date.slice(0,7)===mo).length;
     const pending=list.filter(w=>w.status==='delivered'&&w.rider===S.myName);
-    const rec=`<h2 style="margin:18px 0 8px">My record today</h2><div class="kpis"><div class="kpi"><div class="lbl">Delivered</div><div class="v num">${st.n}</div><div class="d">${mon} this month</div></div><div class="kpi"><div class="lbl">Cash I collected</div><div class="v">${fmt(st.held)}</div><div class="d">hand it to the counter</div></div><div class="kpi"><div class="lbl">Avg time</div><div class="v num">${st.mc?(st.mins/st.mc<1?'&lt;1m':Math.round(st.mins/st.mc)+'m'):'—'}</div><div class="d">out → delivered</div></div></div>
-     ${pending.length?`<div class="banner" style="cursor:default;white-space:normal;margin-top:10px">${pending.length} delivered but not paid yet: ${pending.map(w=>esc((S.cust[w.cust]||{}).name||w.custName||'')).join(', ')}.</div>`:''}
-     ${tdy.length?`<div class="panel tbl-wrap" style="padding:4px 8px;margin-top:10px"><table><thead><tr><th>Time</th><th>Customer</th><th>Paid</th><th class="r">Amount</th></tr></thead><tbody>${tdy.map(o=>`<tr class="click" data-a="viewOrder" data-id="${o.id}"><td class="num">${tstr(o.delivTs||o.ts)}</td><td>${esc((S.cust[o.cust]||{}).name||'Counter order')}${o.outTs&&o.delivTs>o.outTs?` <span class="small muted">${Math.max(1,Math.round((o.delivTs-o.outTs)/60000))} min</span>`:''}</td><td>${Object.keys(o.pay).map(k=>PAYN[k].split(' ')[0]).join('+')}${o.collector===S.myName?' <span class="pill p-warn">with me</span>':''}</td><td class="r">${fmt(o.total)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="small muted">No deliveries yet today.</p>'}`;
+    const rec=`<h2 style="margin:18px 0 8px">My record today</h2><div class="kpis"><div class="kpi"><div class="lbl">Delivered</div><div class="v num">${st.n+pending.length}</div><div class="d">${mon+pending.length} this month</div></div><div class="kpi"><div class="lbl">Cash with me</div><div class="v" style="color:${held?'var(--warn)':'inherit'}">${fmt(held)}</div><div class="d">${held?'give it to the counter':'nothing to hand over'}${st.handed?' · handed over '+fmt(st.handed)+' today':''}</div></div><div class="kpi"><div class="lbl">Avg time</div><div class="v num">${st.mc?(st.mins/st.mc<1?'&lt;1m':Math.round(st.mins/st.mc)+'m'):'—'}</div><div class="d">out → delivered</div></div></div>
+     ${pending.length?`<div class="banner" style="cursor:default;white-space:normal;margin-top:10px">${pending.length} delivered but not paid yet: ${pending.map(w=>esc((S.cust[w.cust]||{}).name||w.custName||'')+' '+aed(webEst(w))).join(', ')}. Tap <b>Payment received</b> on the order when they pay.</div>`:''}
+     ${tdy.length?`<div class="panel tbl-wrap" style="padding:4px 8px;margin-top:10px"><table><thead><tr><th>Time</th><th>Customer</th><th>Paid</th><th class="r">Amount</th></tr></thead><tbody>${tdy.map(o=>`<tr class="click" data-a="viewOrder" data-id="${o.id}"><td class="num">${tstr(o.delivTs||o.ts)}</td><td>${esc((S.cust[o.cust]||{}).name||'Counter order')}${o.outTs&&o.delivTs>o.outTs?` <span class="small muted">${Math.max(1,Math.round((o.delivTs-o.outTs)/60000))} min</span>`:''}</td><td>${Object.keys(o.pay).map(k=>PAYN[k].split(' ')[0]).join('+')}${o.collector===S.myName&&o.pay.cash?(o.handed?' <span class="pill p-ok">handed over</span>':' <span class="pill p-warn">with me</span>'):''}</td><td class="r">${fmt(o.total)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="small muted">No deliveries yet today.</p>'}`;
     return `<p class="small muted" style="margin:0 0 10px">Signed in as <b>${esc(S.myName||'')}</b>. Your deliveries appear here with a sound. Tap <b>Delivered</b> at the customer's door and choose how they paid.</p>
      <h2 style="margin:4px 0 8px">My deliveries (${mine.length})</h2>${mine.length?`<div class="wgrid">${mine.map(card).join('')}</div>`:'<div class="empty">Nothing for you right now.</div>'}
      <h2 style="margin:16px 0 8px">Other delivery orders (${rest.length})</h2>${rest.length?`<div class="wgrid">${rest.map(card).join('')}</div>`:'<p class="small muted">None.</p>'}${rec}`}
   return `<div class="row" style="margin-bottom:12px;justify-content:space-between"><span class="small">${state}</span>${st.webOn&&S.mode!=='readonly'?`<button class="btn ${S.webPaused?'pri':''}" data-a="webPause">${S.webPaused?'Resume online orders':'Pause online orders'}</button>`:''}</div>
+   ${(()=>{const h=Object.entries(ridersHolding());return h.length&&S.mode!=='readonly'?`<div class="banner" style="cursor:default;white-space:normal;display:block;background:var(--surface-2)">Cash with delivery staff: ${h.map(([n,v])=>`<b>${esc(n)}</b> ${aed(v)} <button class="btn sm" data-a="riderCash" data-v="${esc(n)}">Receive</button>`).join(' ')}</div>`:''})()}
    <h2 style="margin:4px 0 8px">New (${nw.length})</h2>${nw.length?`<div class="wgrid">${nw.map(card).join('')}</div>`:'<div class="empty">No new online orders. New ones appear here with a sound.</div>'}
    <h2 style="margin:16px 0 8px">In progress (${act.length})</h2>${act.length?`<div class="wgrid">${act.map(card).join('')}</div>
    <p class="small muted">Accepted orders are open bills: move them on the Kitchen board, and charge them from <b>Sell → Open orders</b> when the customer pays.</p>`:'<p class="small muted">Nothing in progress.</p>'}`}
@@ -1043,7 +1059,8 @@ async function webAccept(id){const w=S.web[id];if(!w)return;
   const ticket={id:tid,lines,type,table:'',car:w.type==='car'?String(w.car||'').slice(0,60):'',plat:type==='deliv'?'own':'',cust:c?w.cust:'',disc:null,note,ts:now,by:cashier||'',no:'W'+(mx+1),sent:true,status:'new',sentTs:now,
     web:id,webPay:w.pay||'cash',webName:(c&&c.name)||w.custName||'',webPhone:(c&&c.phone)||w.phone||'',address:w.type==='delivery'?String(w.address||'').slice(0,200):''};
   const bt=calc({lines,disc:null});try{await setDoc('tickets/'+tid,clone(ticket));await upsert('weborders/'+id,{},{status:'accepted',ticket:tid,ticketNo:ticket.no,acceptedTs:now,by:cashier||'',missing,bill:{lines:lines.map(l=>({n:l.n,q:l.q,p:l.p})),total:bt.total,vat:bt.vat,net:bt.net}});
-    toast(missing.length?'Accepted. Some items are no longer on the menu and were left out.':'Accepted and sent to the kitchen')}catch(e){fail(e)}}
+    toast(missing.length?'Accepted. Some items are no longer on the menu and were left out.':'Accepted and sent to the kitchen');
+    if(w.type==='delivery'&&riderNames().some(r=>r.pref))openModal(`<div class="dlg-h"><h2>Who will deliver?</h2><button class="btn ghost" data-close>Later</button></div><div class="dlg-b"><p class="small muted" style="margin:0">They get an alert on their phone. You can change it on the order card.</p><div class="stack" style="gap:8px">${riderNames().filter(r=>r.pref).map(r=>`<button class="btn big" data-rn="${esc(r.n)}">${esc(r.n)}</button>`).join('')}</div></div>`,d=>d.querySelectorAll('[data-rn]').forEach(b=>b.onclick=()=>{closeModal();assignRider(id,b.dataset.rn)}))}catch(e){fail(e)}}
 function webDecline(id){const w=S.web[id];if(!w)return;
   openModal(`<div class="dlg-h"><h2>Decline order?</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b"><p style="margin:0">The customer sees the reason on their phone.</p>
    <label class="field"><span class="lbl">Reason</span><select id="wdr"><option>Sorry, we are too busy right now</option><option>An item is not available</option><option>Outside our delivery area</option><option>We are closing</option><option>Please call the cafe</option></select></label></div>
@@ -1063,13 +1080,15 @@ function webBillText(w){const t=S.tickets[w.ticket];if(!t)return '';const c=calc
   const W=paperW();const ph=(S.cust[w.cust]&&S.cust[w.cust].phone)||w.phone||'';
   return receiptText(o)+'\n'+'='.repeat(W)+'\n'+wrapW(`TO PAY: AED ${fmt(c.total)} (${(WPAY[w.pay]||'Cash').toUpperCase()})`,W)+'\n'+(w.address?wrapW('Deliver to: '+w.address,W)+'\n':'')+(ph?'Phone: '+ph+'\n':'')+(w.note?wrapW('Note: '+w.note,W)+'\n':'')+(w.rider?'Delivery by: '+w.rider+'\n':'')}
 function printWebBill(id){const w=S.web[id];if(!w)return;const txt=webBillText(w);if(!txt){toast('This bill is no longer open.');return}printText('delivery-bill-'+(w.ticketNo||'')+'.pdf',txt,'receipt')}
+async function assignRider(id,name){const w=S.web[id];if(!w)return;const t=S.tickets[w.ticket];
+  try{await upsert('weborders/'+id,{},{rider:name||''});if(t)await queued('tickets/'+t.id,()=>DB.doc('tickets/'+t.id).update({rider:name||''}));toast(name?'Delivery by '+name:'Delivery person cleared')}catch(e){fail(e)}}
 function webSendOut(id){const w=S.web[id];if(!w)return;const t=S.tickets[w.ticket];
   const done=async(rider,print)=>{try{if(t)await queued('tickets/'+t.id,()=>DB.doc('tickets/'+t.id).update({status:'ready',rider:rider||'',outTs:t.outTs||Date.now()}));
       await upsert('weborders/'+id,{},{status:'ready',t_ready:Date.now(),rider:rider||''});closeModal();toast(w.type==='delivery'?'Out for delivery':'Marked ready');if(print)setTimeout(()=>printWebBill(id),300)}catch(e){fail(e)}};
   if(w.type!=='delivery'){done('',false);return}
   const riders=riderNames();
   openModal(`<div class="dlg-h"><h2>Out for delivery</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b">
-   <label class="field"><span class="lbl">Who is delivering?</span><select id="wrd"><option value="">(not set)</option>${riders.map((r,i)=>`<option ${(S.duty==='delivery'?r.n===S.myName:i===0&&r.pref)?'selected':''}>${esc(r.n)}</option>`).join('')}</select></label>
+   <label class="field"><span class="lbl">Who is delivering?</span><select id="wrd"><option value="">(not set)</option>${riders.map((r,i)=>`<option ${(w.rider?r.n===w.rider:S.duty==='delivery'?r.n===S.myName:i===0&&r.pref)?'selected':''}>${esc(r.n)}</option>`).join('')}</select></label>
    <label class="row small"><input type="checkbox" id="wpb" checked> Print the bill to send with the order</label>
    <p class="small muted" style="margin:0">The customer sees "On the way"${riders.length?' with the name of the delivery person':''}.</p></div>
    <div class="dlg-f"><button class="btn pri" id="wgo">Send out</button></div>`,d=>{d.querySelector('#wgo').onclick=()=>done(d.querySelector('#wrd').value,d.querySelector('#wpb').checked)})}
@@ -1081,9 +1100,10 @@ function webDeliver(id){const w=S.web[id];if(!w)return;const t=S.tickets[w.ticke
    <p class="small" style="margin:0">Customer chose: <b>${esc(WPAY[w.pay]||'Cash')}</b></p>
    <div class="stack" style="gap:8px"><button class="btn pri big" data-pm="cash">Cash received</button><button class="btn big" data-pm="card">Card payment received</button>${already?'':'<button class="btn" data-pm="none">Delivered, not paid yet</button>'}</div></div>`,d=>{
     d.querySelectorAll('[data-pm]').forEach(b=>b.onclick=async()=>{const pm=b.dataset.pm;d.querySelectorAll('[data-pm]').forEach(x=>x.disabled=true);
-      try{if(pm==='none'){await queued('tickets/'+t.id,()=>DB.doc('tickets/'+t.id).update({status:'done',delivTs:Date.now()}));await upsert('weborders/'+id,{},{status:'delivered',deliveredTs:Date.now()});closeModal();toast('Marked delivered. Collect payment later from Online orders.');return}
+      const rider=t.rider||w.rider||(S.duty==='delivery'?S.myName:'');
+      try{if(pm==='none'){await queued('tickets/'+t.id,()=>DB.doc('tickets/'+t.id).update({status:'done',delivTs:Date.now(),rider}));await upsert('weborders/'+id,{},{status:'delivered',deliveredTs:Date.now(),rider});closeModal();toast('Marked delivered. Collect payment later from Online orders.');return}
         await upsert('weborders/'+id,{},{deliveredTs:w.deliveredTs||Date.now()});
-        const saved=cart;cart={lines:clone({x:t.lines}).x||[],type:t.type||'deliv',table:'',car:t.car||'',plat:t.plat||'',cust:t.cust||'',disc:t.disc||null,note:t.note||'',ticket:t.id,rider:t.rider||w.rider||'',delivTs:t.delivTs||Date.now(),collector:S.duty==='delivery'?S.myName:''};
+        const saved=cart;cart={lines:clone({x:t.lines}).x||[],type:t.type||'deliv',table:'',car:t.car||'',plat:t.plat||'',cust:t.cust||'',disc:t.disc||null,note:t.note||'',ticket:t.id,rider,delivTs:t.delivTs||Date.now(),collector:S.duty==='delivery'?S.myName:''};
         const o=await finalize({[pm]:tot},pm==='cash'?tot:0,0,'');cart=saved;saveCart();closeModal();paint();toast(`Paid by ${pm} · token ${o.no}`)}
       catch(e){fail(e);d.querySelectorAll('[data-pm]').forEach(x=>x.disabled=false)}})})}
 function newKey(){const a=new Uint8Array(18);crypto.getRandomValues(a);return Array.from(a,b=>'abcdefghjkmnpqrstuvwxyz23456789'[b%31]).join('')}
@@ -1177,7 +1197,7 @@ RM.moves=function(){const rows=[];
   return `<div class="row" style="margin-bottom:10px"><select id="movItem" style="max-width:320px"><option value="">All materials</option>${invItems().map(v=>`<option value="${v.id}" ${f===v.id?'selected':''}>${esc(v.name)}</option>`).join('')}</select></div>
    <p class="small muted" style="margin:0 0 8px">Deliveries, wastage and count corrections for the last two months. Use from sales is worked out from recipes and not listed line by line.</p>
    ${list.length?`<div class="panel tbl-wrap" style="padding:4px 8px"><table><thead><tr><th>Date</th><th>Material</th><th>What</th><th class="r">Qty</th><th class="r">AED</th></tr></thead><tbody>${list.map(r=>`<tr><td class="num">${new Date(r.ts).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} ${tstr(r.ts)}</td><td>${esc(invName(r.i))}</td><td class="small">${esc(r.what)}</td><td class="r" style="color:${r.q<0?'var(--bad)':'var(--ok)'}">${r.q>0?'+':''}${fmt(r.q)} ${esc(invUnit(r.i))}</td><td class="r">${fmt(r.val)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No movements yet.</div>'}`};
-document.addEventListener('change',e=>{if(e.target.id==='movItem'){UI.movItem=e.target.value;paint()}if(e.target.id==='hDate'){const v=e.target.value;UI.hDate=v&&v<=today()?v:today();paint()}});
+document.addEventListener('change',e=>{const wr=e.target.dataset&&e.target.dataset.wrider;if(wr){assignRider(wr,e.target.value);return}if(e.target.id==='movItem'){UI.movItem=e.target.value;paint()}if(e.target.id==='hDate'){const v=e.target.value;UI.hDate=v&&v<=today()?v:today();paint()}});
 
 function invForm(id){const v=id?S.inv.items[id]:{};
   openModal(`<div class="dlg-h"><h2>${id?'Edit material':'New raw material'}</h2><button class="btn ghost" data-close>Cancel</button></div>
@@ -1381,7 +1401,7 @@ RENDER.close=function(){const k=today();const cl=S.closes[k]||{};const e=drawerE
    <h2>Cash drawer</h2>
    <div class="row" style="flex-wrap:nowrap"><label class="field" style="flex:1"><span class="lbl">Opening float (AED)</span><input id="fl" type="number" step="0.25" value="${esc(cl.float!=null?cl.float:'')}" placeholder="Cash in the drawer at opening"></label><button class="btn" data-a="saveFloat" style="align-self:flex-end">Save float</button></div>
    <div class="tl"><span>Opening float</span><span>${fmt(e.float)}</span></div><div class="tl"><span>+ Cash sales</span><span>${fmt(e.cashSales)}</span></div><div class="tl"><span>+ Khata paid in cash</span><span>${fmt(e.khata)}</span></div><div class="tl"><span>− Expenses paid from drawer</span><span>${fmt(e.exp)}</span></div><div class="tl"><span>− Supplier bills paid from drawer</span><span>${fmt(e.sup)}</span></div>
-   ${(()=>{const rs=Object.entries(riderStats(ordersOn(k))).filter(([n,x])=>x.held>0);return rs.length?`<div class="banner" style="cursor:default;white-space:normal">Cash collected at the door is counted above. Make sure it is in the drawer: ${rs.map(([n,x])=>`<b>${esc(n)}</b> collected ${aed(x.held)}`).join(', ')}.</div>`:''})()}
+   ${(()=>{const h=Object.entries(ridersHolding());const hs=Object.values((S.closes[k]||{}).hand||{});return (h.length?`<div class="banner" style="cursor:default;white-space:normal;display:block">Delivery cash is counted above but is still with the delivery staff: ${h.map(([n,v])=>`<b>${esc(n)}</b> ${aed(v)} <button class="btn sm" data-a="riderCash" data-v="${esc(n)}">Receive</button>`).join(' ')}</div>`:'')+(hs.length?`<div class="small muted">Handed over today: ${hs.map(x=>`${esc(x.rider)} ${fmt(x.got)}${Math.abs(x.diff)>=0.005?` (${x.diff<0?'short':'extra'} ${fmt(Math.abs(x.diff))})`:''} at ${tstr(x.ts)}`).join(' · ')}</div>`:'')})()}
    <div class="tl total"><span>Should be in drawer</span><span>${aed(e.expected)}</span></div>
    <h3>Count the notes and coins</h3><div class="denoms">${DENOMS.map(d=>`<label>AED ${d<1?d.toFixed(2):d}<input data-den="${d}" type="number" min="0" inputmode="numeric" placeholder="0" value="${cl.den&&cl.den[String(d).replace('.','_')]||''}"></label>`).join('')}</div>
    <div class="tl total"><span>Counted</span><span id="cnt">${aed(cl.counted||0)}</span></div><div class="tl"><span>Difference</span><span id="dif">${cl.counted!=null?fmt(cl.counted-e.expected):'—'}</span></div>
@@ -1398,7 +1418,7 @@ RENDER.close=function(){const k=today();const cl=S.closes[k]||{};const e=drawerE
 function countDenoms(){let t=0;document.querySelectorAll('[data-den]').forEach(i=>t+=(+i.value||0)*(+i.dataset.den));return r2(t)}
 document.addEventListener('input',e=>{if(e.target.dataset&&e.target.dataset.den!=null){const t=countDenoms();const ex=drawerExpected(today()).expected;$('#cnt').textContent=aed(t);const d=r2(t-ex);const el=$('#dif');el.textContent=(d>0?'+':'')+fmt(d);el.style.color=Math.abs(d)<1?'var(--ok)':'var(--bad)'}
   const k=e.target.dataset&&e.target.dataset.in;if(k){UI[k]=e.target.value;const pos=e.target.selectionStart;const id=e.target.id;paint();const n=document.getElementById(id);if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}});
-function zText(k){const a=agg(ordersOn(k),[]);const e=drawerExpected(k);const cl=S.closes[k]||{};return [`${S.settings.name}`,`Z REPORT  ${dstr(k)}`,S.settings.trn?'TRN '+S.settings.trn:'','',`Bills: ${a.n}`,`Gross sales: ${fmt(a.gross)}`,`Discounts: ${fmt(a.disc)}`,`Net excl. VAT: ${fmt(a.net)}`,`VAT ${S.settings.vat}%: ${fmt(a.vat)}`,''].concat(Object.entries(a.pay).map(([p,v])=>`${PAYN[p]}: ${fmt(v)}`)).concat(['',`Voids: ${a.voids} (${fmt(a.voidAmt)})`,`Expected cash: ${fmt(e.expected)}`,`Counted cash: ${cl.counted!=null?fmt(cl.counted):'-'}`,`Difference: ${cl.diff!=null?fmt(cl.diff):'-'}`,cl.note?'Note: '+cl.note:'']).join('\n')}
+function zText(k){const a=agg(ordersOn(k),[]);const e=drawerExpected(k);const cl=S.closes[k]||{};return [`${S.settings.name}`,`Z REPORT  ${dstr(k)}`,S.settings.trn?'TRN '+S.settings.trn:'','',`Bills: ${a.n}`,`Gross sales: ${fmt(a.gross)}`,`Discounts: ${fmt(a.disc)}`,`Net excl. VAT: ${fmt(a.net)}`,`VAT ${S.settings.vat}%: ${fmt(a.vat)}`,''].concat(Object.entries(a.pay).map(([p,v])=>`${PAYN[p]}: ${fmt(v)}`)).concat(['',`Voids: ${a.voids} (${fmt(a.voidAmt)})`,...Object.values(cl.hand||{}).map(x=>`Cash from ${x.rider}: ${fmt(x.got)}${Math.abs(x.diff)>=0.005?' (diff '+fmt(x.diff)+')':''}`),`Expected cash: ${fmt(e.expected)}`,`Counted cash: ${cl.counted!=null?fmt(cl.counted):'-'}`,`Difference: ${cl.diff!=null?fmt(cl.diff):'-'}`,cl.note?'Note: '+cl.note:'']).join('\n')}
 
 /* ---------- REPORTS ---------- */
 let repCache={key:'',d:null};
@@ -1538,6 +1558,7 @@ function teamPanel(){if(!S.role)return '';const canEdit=S.role==='owner';const m
 
 /* ---------- actions ---------- */
 const A={
+  riderCash:d=>receiveCash(d.v),
   rider:d=>{cart.rider=cart.rider===d.v?'':d.v;saveCart();paint()},
   teamRemove:d=>{const u=(S.users||{})[d.id]||{};confirmBox('Remove from the team?',esc((u.name?u.name+' · ':'')+(u.email||''))+' will no longer be able to use the POS. If they sign in again, they appear as Waiting.','Remove',()=>FS.doc('users/'+d.id).delete().then(()=>toast('Removed')))},
   goWeb:()=>{UI.kTab='web';go('orders')},webOut:d=>webSendOut(d.id),webDone:d=>webDeliver(d.id),webPrint:d=>printWebBill(d.id),webAccept:d=>webAccept(d.id),webDecline:d=>webDecline(d.id),
