@@ -573,7 +573,8 @@ function typeExtra(){
     let b='';for(let i=1;i<=(+S.settings.tables||0);i++){const k='T'+i;b+=`<button class="${cart.table===k?'on':busy[k]?'busy':''}" data-a="table" data-v="${k}" title="${busy[k]?'Open bill '+aed(calc(busy[k]).total):'Free'}">${k}</button>`}
     return `<div class="tables">${b}</div>`}
   if(cart.type==='car')return `<div class="row"><input id="carIn" placeholder="Car plate or description, e.g. Dubai K 48213 white Patrol" value="${esc(cart.car)}" style="flex:1"></div>`;
-  if(cart.type==='deliv')return `<div class="row">${(S.settings.platforms||[]).map(p=>`<button class="chip ${cart.plat===p.id?'on':''}" data-a="plat" data-v="${p.id}">${esc(p.name)}</button>`).join('')}<button class="chip ${cart.plat==='own'?'on':''}" data-a="plat" data-v="own">Own delivery</button></div>${cart.plat==='own'?`<div class="row"><span class="lbl">Delivered by</span>${riderNames().map(r=>`<button class="chip ${cart.rider===r.n?'on':''}" data-a="rider" data-v="${esc(r.n)}">${esc(r.n)}</button>`).join('')||'<span class="small muted">Add delivery people in Staff (role Delivery).</span>'}</div>`:''}`;
+  if(cart.type==='deliv')return `<div class="row">${(S.settings.platforms||[]).map(p=>`<button class="chip ${cart.plat===p.id?'on':''}" data-a="plat" data-v="${p.id}">${esc(p.name)}</button>`).join('')}<button class="chip ${cart.plat==='own'?'on':''}" data-a="plat" data-v="own">Own delivery</button></div>${cart.plat==='own'?`<div class="row"><span class="lbl">Delivered by</span>${riderNames().map(r=>`<button class="chip ${cart.rider===r.n?'on':''}" data-a="rider" data-v="${esc(r.n)}">${esc(r.n)}</button>`).join('')||'<span class="small muted">Add delivery people in Staff (role Delivery).</span>'}</div>
+    <div class="row" style="flex-wrap:nowrap"><input id="dAddr" placeholder="Delivery address" value="${esc(cart.addr!=null?cart.addr:((S.cust[cart.cust]||{}).address||''))}" style="flex:2;min-width:0"><input id="dPhone" inputmode="tel" placeholder="Customer phone" value="${esc(cart.phone!=null?cart.phone:((S.cust[cart.cust]||{}).phone||''))}" style="flex:1;min-width:0"></div>`:''}`;
   return'';
 }
 function cartHtml(){
@@ -592,11 +593,13 @@ function cartHtml(){
     <div class="tl"><span class="muted">VAT ${S.settings.vat}% ${S.settings.inclusive?'(included)':''}</span><span>${fmt(t.vat)}</span></div>
     <div class="tl total"><span>Total</span><span>${aed(t.total)}</span></div>
     <div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-a="disc" ${cart.lines.length?'':'disabled'}>Discount</button><button class="btn sm" data-a="hold" ${cart.lines.length?'':'disabled'}>${cart.type==='dine'?'Save to table':'Hold'}</button><button class="btn sm" data-a="kitchenSend" ${cart.lines.length?'':'disabled'} title="Send to kitchen before payment">Kitchen</button><button class="btn sm ghost danger" data-a="clear" ${cart.lines.length||cart.ticket?'':'disabled'}>Clear</button></div>
-    <button class="btn pri big" data-a="pay" ${cart.lines.length&&S.mode!=='readonly'?'':'disabled'}>Charge ${aed(t.total)}</button>
+    ${cart.type==='deliv'&&cart.plat==='own'&&DB&&DB.fb&&S.mode!=='readonly'?`<button class="btn grn big" data-a="codSend" ${cart.lines.length?'':'disabled'}>${cart.rider?'Send with '+esc(cart.rider):'Send out'} · collect on delivery</button>`:''}
+    <button class="btn ${cart.type==='deliv'&&cart.plat==='own'&&DB&&DB.fb?'':'pri'} big" data-a="pay" ${cart.lines.length&&S.mode!=='readonly'?'':'disabled'}>${cart.type==='deliv'&&cart.plat==='own'&&DB&&DB.fb?'Already paid · charge now':'Charge'} ${aed(t.total)}</button>
    </div>`;
 }
 function afterSell(){const q=$('#q');if(q){q.oninput=()=>{UI.q=q.value;const pos=q.selectionStart;paint();const n=$('#q');n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}};
   q.onkeydown=e=>{if(e.key==='Enter'){const f=$('#tiles .tile');if(f){f.click();UI.q='';paint();$('#q').focus()}}}}
+  const da=$('#dAddr');if(da)da.onchange=()=>{cart.addr=da.value;saveCart()};const dp=$('#dPhone');if(dp)dp.onchange=()=>{cart.phone=dp.value;saveCart()};
   const ci=$('#carIn');if(ci)ci.onchange=()=>{cart.car=ci.value;saveCart()};}
 function repaintCart(){const p=$('#cartPane');if(p&&UI.view==='sell'){paint()}}
 function addItem(id,opts){const it=S.menu.items[id];if(!it)return;try{navigator.vibrate&&navigator.vibrate(10)}catch(e){}opts=opts||{};
@@ -651,7 +654,7 @@ async function finalize(pay,tendered,change,ref){
   const t=calc(cart);const ts=Date.now();const date=dkey(ts);const tk=cart.ticket&&S.tickets[cart.ticket];
   const o={id:uid('o'),no:tokNo,ts,date,dev:DEV,type:cart.type,table:cart.table||'',car:cart.car||'',plat:cart.type==='deliv'?cart.plat:'',cust:cart.cust||'',rider:cart.type==='deliv'?(cart.rider||(tk&&tk.rider)||''):'',address:(tk&&tk.address)||'',outTs:(tk&&tk.outTs)||0,delivTs:cart.delivTs||(tk&&tk.delivTs)||0,collector:cart.collector||'',
     lines:cart.lines.map(l=>({i:l.i,n:l.n,p:l.p,q:l.q,m:l.m||[],note:l.note||'',c:l.c||0,cat:l.cat||''})),
-    sub:t.sub,disc:t.disc,net:t.net,vat:t.vat,total:t.total,pay,tendered,change,ref,by:cashier||'',status:tk&&tk.status?(tk.web&&tk.status==='ready'?'done':tk.status):'new',note:cart.note||''};
+    sub:t.sub,disc:t.disc,net:t.net,vat:t.vat,total:t.total,pay,tendered,change,ref,by:cashier||'',status:tk&&tk.status?((tk.web||tk.cod)&&(tk.status==='ready'||cart.delivTs)?'done':tk.status):'new',note:cart.note||''};
   const shard=Math.floor(new Date(ts).getHours()/6);
   const path=`orders/${date}_${DEV}_${shard}`;
   await upsert(path,{date,dev:DEV,o:{}},{o:{[o.id]:o}});
@@ -806,16 +809,16 @@ function pickCashier(){const list=staffList().filter(s=>s.active!==false);
 async function holdCart(sendKitchen){
   if(cart.type==='dine'&&!cart.table){toast('Pick a table first.');return}
   const id=cart.ticket||uid('t');const prev=S.tickets[id]||{};
-  const data={id,rider:cart.rider||prev.rider||'',lines:cart.lines,type:cart.type,table:cart.table,car:cart.car,plat:cart.plat,cust:cart.cust,disc:cart.disc,note:cart.note,ts:prev.ts||Date.now(),by:cashier,no:prev.no||nextTicketNo(),
+  const data={id,rider:cart.rider||prev.rider||'',address:cart.addr!=null?cart.addr:(prev.address||''),phone:cart.phone!=null?cart.phone:(prev.phone||''),cod:!!(cart.cod||prev.cod),outTs:prev.outTs||(cart.cod?Date.now():0),lines:cart.lines,type:cart.type,table:cart.table,car:cart.car,plat:cart.plat,cust:cart.cust,disc:cart.disc,note:cart.note,ts:prev.ts||Date.now(),by:cashier,no:prev.no||nextTicketNo(),
     sent:sendKitchen||prev.sent||false,status:prev.status||'new',sentTs:sendKitchen&&!prev.sent?Date.now():(prev.sentTs||0)};
   if(prev.web)Object.assign(data,{web:prev.web,webPay:prev.webPay||'',webName:prev.webName||'',webPhone:prev.webPhone||'',address:prev.address||''});
   try{await setDoc('tickets/'+id,clone(data));cart=newCart();saveCart();UI.cartOpen=false;paint();toast(sendKitchen?'Sent to kitchen':'Order saved as open bill')}catch(e){fail(e)}
 }
 function nextTicketNo(){let m=0;Object.values(S.tickets).forEach(t=>{const n=parseInt(String(t.no||'').slice(1));if(n>m)m=n});return 'B'+(m+1)}
 function recallTicket(id){const t=S.tickets[id];if(!t)return;if(cart.lines.length&&cart.ticket!==id){toast('Finish or hold the current order first.');return}
-  cart={lines:clone({x:t.lines}).x||[],type:t.type||'take',table:t.table||'',car:t.car||'',plat:t.plat||'',cust:t.cust||'',disc:t.disc||null,note:t.note||'',ticket:id,rider:t.rider||''};saveCart();closeModal();go('sell')}
+  cart={lines:clone({x:t.lines}).x||[],type:t.type||'take',table:t.table||'',car:t.car||'',plat:t.plat||'',cust:t.cust||'',disc:t.disc||null,note:t.note||'',ticket:id,rider:t.rider||'',addr:t.address||'',phone:t.phone||'',cod:!!t.cod};saveCart();closeModal();go('sell')}
 function ticketsDialog(){const ts=Object.values(S.tickets).sort((a,b)=>a.ts-b.ts);
-  openModal(`<div class="dlg-h"><h2>Open orders</h2><button class="btn ghost" data-close>Close</button></div><div class="dlg-b">${ts.length?`<div class="tbl-wrap"><table><thead><tr><th>Bill</th><th>Type</th><th>Opened</th><th class="r">Total</th><th></th></tr></thead><tbody>${ts.map(t=>`<tr class="click" data-t="${t.id}"><td><b>${esc(t.table||t.no)}</b></td><td>${TYPES[t.type]||''}${t.car?' · '+esc(t.car):''}${t.sent?' <span class="pill p-mute">kitchen</span>':''}</td><td class="num">${tstr(t.ts)}</td><td class="r">${fmt(calc({lines:t.lines||[],disc:t.disc}).total)}</td><td><span class="btn sm">Open</span></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>No open orders</b>Held orders and dine-in tables appear here.</div>'}</div>`,d=>{
+  openModal(`<div class="dlg-h"><h2>Open orders</h2><button class="btn ghost" data-close>Close</button></div><div class="dlg-b">${ts.length?`<div class="tbl-wrap"><table><thead><tr><th>Bill</th><th>Type</th><th>Opened</th><th class="r">Total</th><th></th></tr></thead><tbody>${ts.map(t=>`<tr class="click" data-t="${t.id}"><td><b>${esc(t.table||t.no)}</b></td><td>${TYPES[t.type]||''}${t.car?' · '+esc(t.car):''}${t.cod&&t.rider?' · <b>with '+esc(t.rider)+'</b>, to collect':''}${t.sent?' <span class="pill p-mute">kitchen</span>':''}</td><td class="num">${tstr(t.ts)}</td><td class="r">${fmt(calc({lines:t.lines||[],disc:t.disc}).total)}</td><td><span class="btn sm">Open</span></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>No open orders</b>Held orders and dine-in tables appear here.</div>'}</div>`,d=>{
     d.querySelectorAll('[data-t]').forEach(r=>r.onclick=()=>recallTicket(r.dataset.t))})}
 
 /* ---------- ORDERS / KITCHEN ---------- */
@@ -1014,7 +1017,8 @@ function beep(){try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAu
   [0,.28,.56].forEach((d,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.frequency.value=i===2?1175:880;o.connect(g);g.connect(audioCtx.destination);
     g.gain.setValueAtTime(.0001,t+d);g.gain.exponentialRampToValueAtTime(.35,t+d+.02);g.gain.exponentialRampToValueAtTime(.0001,t+d+.22);o.start(t+d);o.stop(t+d+.24)})}catch(e){}
   try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}}
-const myDeliveries=()=>webList().filter(w=>['accepted','preparing','ready'].includes(w.status)&&w.type==='delivery'&&w.rider&&w.rider===S.myName);
+const myCod=()=>Object.values(S.tickets).filter(t=>t.cod&&t.rider&&t.rider===S.myName).sort((a,b)=>a.ts-b.ts);
+const myDeliveries=()=>webList().filter(w=>['accepted','preparing','ready'].includes(w.status)&&w.type==='delivery'&&w.rider&&w.rider===S.myName).concat(myCod());
 let mineSeen=null;
 function webTick(){if(!S.role||S.role==='accountant')return;
   if(S.duty==='delivery'){const ids=myDeliveries().map(w=>w.id);if(mineSeen&&ids.some(id=>!mineSeen.has(id))){beep();toast('New delivery for you')}mineSeen=new Set(ids);return}const n=webNew().length;if(n>lastNewCount){beep();toast(n===1?'New online order':n+' new online orders')}lastNewCount=n}
@@ -1048,7 +1052,7 @@ function webHtml(){const st=S.settings;const list=webList();const nw=S.duty==='d
      ${pending.length?`<div class="banner" style="cursor:default;white-space:normal;margin-top:10px">${pending.length} delivered but not paid yet: ${pending.map(w=>esc((S.cust[w.cust]||{}).name||w.custName||'')+' '+aed(webEst(w))).join(', ')}. Tap <b>Payment received</b> on the order when they pay.</div>`:''}
      ${tdy.length?`<div class="panel tbl-wrap" style="padding:4px 8px;margin-top:10px"><table><thead><tr><th>Time</th><th>Customer</th><th>Paid</th><th class="r">Amount</th></tr></thead><tbody>${tdy.map(o=>`<tr class="click" data-a="viewOrder" data-id="${o.id}"><td class="num">${tstr(o.delivTs||o.ts)}</td><td>${esc((S.cust[o.cust]||{}).name||'Counter order')}${o.outTs&&o.delivTs>o.outTs?` <span class="small muted">${Math.max(1,Math.round((o.delivTs-o.outTs)/60000))} min</span>`:''}</td><td>${Object.keys(o.pay).map(k=>PAYN[k].split(' ')[0]).join('+')}${o.collector===S.myName&&o.pay.cash?(o.handed?' <span class="pill p-ok">handed over</span>':' <span class="pill p-warn">with me</span>'):''}</td><td class="r">${fmt(o.total)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="small muted">No deliveries yet today.</p>'}`;
     return `<p class="small muted" style="margin:0 0 10px">Signed in as <b>${esc(S.myName||'')}</b>. Your deliveries appear here with a sound. Tap <b>Delivered</b> at the customer's door and choose how they paid.</p>
-     <h2 style="margin:4px 0 8px">My deliveries (${mine.length})</h2>${mine.length?`<div class="wgrid">${mine.map(card).join('')}</div>`:'<div class="empty">Nothing for you right now.</div>'}
+     <h2 style="margin:4px 0 8px">My deliveries (${mine.length+myCod().length})</h2>${mine.length||myCod().length?`<div class="wgrid">${mine.map(card).join('')}${myCod().map(codCard).join('')}</div>`:'<div class="empty">Nothing for you right now.</div>'}
      <h2 style="margin:16px 0 8px">Other delivery orders (${rest.length})</h2>${rest.length?`<div class="wgrid">${rest.map(card).join('')}</div>`:'<p class="small muted">None.</p>'}${rec}`}
   return `<div class="row" style="margin-bottom:12px;justify-content:space-between"><span class="small">${state}</span>${st.webOn&&S.mode!=='readonly'?`<button class="btn ${S.webPaused?'pri':''}" data-a="webPause">${S.webPaused?'Resume online orders':'Pause online orders'}</button>`:''}</div>
    ${(()=>{const h=Object.entries(ridersHolding());return h.length&&S.mode!=='readonly'?`<div class="banner" style="cursor:default;white-space:normal;display:block;background:var(--surface-2)">Cash with delivery staff: ${h.map(([n,v])=>`<b>${esc(n)}</b> ${aed(v)} <button class="btn sm" data-a="riderCash" data-v="${esc(n)}">Receive</button>`).join(' ')}</div>`:''})()}
@@ -1085,6 +1089,25 @@ function webActions(w,c){const t=S.tickets[w.ticket];const ph=(c&&c.phone)||w.ph
   if(t)btns.push(`<button class="btn" data-a="webPrint" data-id="${w.id}">Print bill</button>`);
   const links=[ph?`<a class="btn sm" href="tel:${esc(ph.replace(/[^\d+]/g,''))}">Call ${esc(ph)}</a>`:'',w.type==='delivery'&&w.address?`<a class="btn sm" target="_blank" rel="noopener" href="${mapLink(w.address)}">Map</a>`:''].filter(Boolean).join('');
   return `<div class="row">${btns.join('')}</div>${links?`<div class="row">${links}</div>`:''}${t?'':'<p class="small muted" style="margin:0">This bill is no longer open (already paid or removed).</p>'}`}
+function codCard(t){const c=S.cust[t.cust]||{};const tot=calc({lines:t.lines||[],disc:t.disc}).total;const ph=t.phone||c.phone||'';const mins=Math.floor((Date.now()-(t.outTs||t.ts))/60000);
+  return `<div class="wcard isnew"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div><b>${esc(c.name||'Counter order')}</b><div class="small muted num">${esc(ph)}</div></div><div style="text-align:right"><span class="pill p-warn">Counter · ${esc(t.no)}</span><div class="small muted">${mins<1?'just now':mins+' min ago'}</div></div></div>
+   ${t.address?`<div class="small"><b>Delivery</b> · ${esc(t.address)}</div>`:''}
+   <ul class="small">${(t.lines||[]).map(l=>`<li><b>${l.q}×</b> ${esc(l.n)}${l.m&&l.m.length?` <i style="color:var(--cardamom)">${esc(l.m.join(', '))}</i>`:''}</li>`).join('')}</ul>
+   <div class="row" style="justify-content:space-between"><span class="small"><b>Collect from customer</b></span><b class="num">${aed(tot)}</b></div>
+   <div class="row"><button class="btn pri" style="flex:1" data-a="codDone" data-id="${t.id}">Delivered</button></div>
+   <div class="row">${ph?`<a class="btn sm" href="tel:${esc(ph.replace(/[^\d+]/g,''))}">Call ${esc(ph)}</a>`:''}${t.address?`<a class="btn sm" target="_blank" rel="noopener" href="${mapLink(t.address)}">Map</a>`:''}</div></div>`}
+function codBillText(t){const c=calc({lines:t.lines||[],disc:t.disc});const ts=Date.now();const W=paperW();
+  const o={no:t.no,ts,date:dkey(ts),type:'deliv',table:'',car:'',cust:t.cust||'',lines:t.lines||[],sub:c.sub,disc:c.disc,net:c.net,vat:c.vat,total:c.total,pay:{},by:cashier||'',address:t.address||'',rider:t.rider||''};
+  return receiptText(o)+'\n'+'='.repeat(W)+'\n'+wrapW(`TO PAY: AED ${fmt(c.total)} (CASH ON DELIVERY)`,W)+'\n'+(t.phone?'Phone: '+t.phone+'\n':'')}
+function codDeliver(id){const t=S.tickets[id];if(!t){toast('This order is already paid or removed.');return}const tot=calc({lines:t.lines||[],disc:t.disc}).total;
+  openModal(`<div class="dlg-h"><h2>Delivered · ${esc(t.no)}</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b">
+   <div class="tl total"><span>Collect</span><span>${aed(tot)}</span></div>
+   <div class="stack" style="gap:8px"><button class="btn pri big" data-pm="cash">Cash received</button><button class="btn big" data-pm="card">Card payment received</button></div>
+   <p class="small muted" style="margin:0">Not paid? Leave it open and tell the counter.</p></div>`,d=>{
+    d.querySelectorAll('[data-pm]').forEach(b=>b.onclick=async()=>{const pm=b.dataset.pm;d.querySelectorAll('[data-pm]').forEach(x=>x.disabled=true);
+      try{const saved=cart;cart={lines:clone({x:t.lines}).x||[],type:'deliv',table:'',car:'',plat:'own',cust:t.cust||'',disc:t.disc||null,note:t.note||'',ticket:t.id,rider:t.rider||(S.duty==='delivery'?S.myName:''),delivTs:Date.now(),collector:pm==='cash'&&S.duty==='delivery'?S.myName:''};
+        const o=await finalize({[pm]:tot},pm==='cash'?tot:0,0,'');cart=saved;saveCart();closeModal();paint();toast(`Paid by ${pm} · token ${o.no}`)}
+      catch(e){fail(e);d.querySelectorAll('[data-pm]').forEach(x=>x.disabled=false)}})})}
 function webBillText(w){const t=S.tickets[w.ticket];if(!t)return '';const c=calc({lines:t.lines||[],disc:t.disc});const ts=Date.now();
   const o={no:t.no,ts,date:dkey(ts),type:t.type,table:'',car:t.car||'',cust:t.cust||'',lines:t.lines||[],sub:c.sub,disc:c.disc,net:c.net,vat:c.vat,total:c.total,pay:{},by:cashier||''};
   const W=paperW();const ph=(S.cust[w.cust]&&S.cust[w.cust].phone)||w.phone||'';
@@ -1568,6 +1591,10 @@ function teamPanel(){if(!S.role)return '';const canEdit=S.role==='owner';const m
 
 /* ---------- actions ---------- */
 const A={
+  codSend:()=>{const da=$('#dAddr'),dp=$('#dPhone');if(da)cart.addr=da.value.trim();if(dp)cart.phone=dp.value.trim();
+    if(!cart.rider){toast('Tap who will deliver first.');return}if(!cart.addr&&!cart.phone){toast('Add the address or phone so the delivery person can find the customer.');return}
+    cart.cod=true;const tot=calc(cart).total;holdCart(true).then(()=>{const t=Object.values(S.tickets).sort((a,b)=>b.ts-a.ts).find(x=>x.cod);toast('Sent with '+(t&&t.rider||'delivery')+' · collect '+aed(tot));if(t)setTimeout(()=>printText('delivery-bill-'+t.no+'.pdf',codBillText(t),'receipt'),300)})},
+  codDone:d=>codDeliver(d.id),
   riderCash:d=>receiveCash(d.v),
   rider:d=>{cart.rider=cart.rider===d.v?'':d.v;saveCart();paint()},
   teamRemove:d=>{const u=(S.users||{})[d.id]||{};confirmBox('Remove from the team?',esc((u.name?u.name+' · ':'')+(u.email||''))+' will no longer be able to use the POS. If they sign in again, they appear as Waiting.','Remove',()=>FS.doc('users/'+d.id).delete().then(()=>toast('Removed')))},
