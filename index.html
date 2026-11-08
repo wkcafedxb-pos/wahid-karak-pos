@@ -1302,15 +1302,36 @@ function purForm(pre){pre=pre||{};let lines=(pre.lines||[{}]).map(l=>({i:l.i||''
       try{const m=date.slice(0,7);await upsert('pur/'+m,{m,o:{}},{o:{[rec.id]:rec}});await upsert('cfg/inv',{items:{}},{items:patch});
         if(pre.po)await upsert('po/'+pre.po,{},{status:'received',recTs:Date.now()});closeModal();toast('Purchase saved, stock updated')}catch(e){fail(e);d.querySelector('#pgo').disabled=false}}})};
   draw()}
-function purView(id){const p=S.pur[id];if(!p)return;
+const PMETH={cash:'Cash from the drawer',cashout:'Cash (owner, not from drawer)',bank:'Bank transfer',card:'Card',cheque:'Cheque'};
+const pmKey=p=>p.method==='cash'?(p.drawer?'cash':'cashout'):(p.method||'cash');
+function payLabel(p){return p.paid?`Paid · ${esc(PMETH[pmKey(p)]||p.method)} · ${dstr(p.payDate||p.date)}${p.payRef?' · ref '+esc(p.payRef):''}`:'<b style="color:var(--warn)">Unpaid</b>'}
+function purView(id){const p=S.pur[id];if(!p)return;const mgr=isManagerUnlocked()&&S.mode!=='readonly';const edits=Object.values(p.edits||{}).sort((a,b)=>b.ts-a.ts);
   openModal(`<div class="dlg-h"><h2>${esc(supName(p.sup))}</h2><button class="btn ghost" data-close>Close</button></div>
-  <div class="dlg-b"><p class="muted" style="margin:0">${dstr(p.date)} · invoice ${esc(p.inv||'—')} · ${p.paid?'paid by '+esc(p.method):'<b>unpaid</b>'}</p>
+  <div class="dlg-b"><p class="muted" style="margin:0">${dstr(p.date)} · invoice ${esc(p.inv||'—')}</p>
   <table><tbody>${(p.lines||[]).map(l=>`<tr><td>${esc(invName(l.i))}</td><td class="r">${fmt(l.q)} ${esc(invUnit(l.i))}</td><td class="r">${fmt(l.amt)}</td><td class="small muted">${l.exp?'use by '+dstr(l.exp):''}</td></tr>`).join('')}</tbody></table>
-  <div class="tl"><span>Subtotal</span><span>${fmt(p.sub)}</span></div><div class="tl"><span>VAT</span><span>${fmt(p.vat)}</span></div><div class="tl total"><span>Total</span><span>${aed(p.total)}</span></div></div>
-  <div class="dlg-f"><button class="btn danger" id="pdel">Delete</button>${p.paid?'':'<button class="btn pri" id="ppay">Pay supplier</button>'}</div>`,d=>{
-   const pp=d.querySelector('#ppay');if(pp)pp.onclick=()=>openModal(`<div class="dlg-h"><h2>Pay ${esc(supName(p.sup))} ${aed(p.total)}</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b"><select id="pm"><option value="cash">Cash from the drawer</option><option value="cashout">Cash (owner, not drawer)</option><option value="bank">Bank transfer</option><option value="card">Card</option><option value="cheque">Cheque</option></select></div><div class="dlg-f"><button class="btn pri" id="pg">Mark paid</button></div>`,dd=>{
-     dd.querySelector('#pg').onclick=async()=>{const m=dd.querySelector('#pm').value;try{await upsert('pur/'+p._doc,{},{o:{[p.id]:{paid:true,method:m==='cashout'?'cash':m,drawer:m==='cash',payDate:today(),payTs:Date.now()}}});closeModal();toast('Supplier bill paid')}catch(e){fail(e)}}});
-   d.querySelector('#pdel').onclick=()=>confirmBox('Delete this purchase?','The bill is removed from reports. Stock is not reduced; do a count if the goods were never received.','Delete',()=>upsert('pur/'+p._doc,{},{o:{[p.id]:{del:true}}}),true)})}
+  <div class="tl"><span>Subtotal</span><span>${fmt(p.sub)}</span></div><div class="tl"><span>VAT</span><span>${fmt(p.vat)}</span></div><div class="tl total"><span>Total</span><span>${aed(p.total)}</span></div>
+  <div class="panel" style="background:var(--surface-2);padding:10px 12px"><div class="lbl">Payment</div><div style="margin-top:2px">${payLabel(p)}</div>
+   ${edits.length?`<div class="small muted" style="margin-top:6px">${edits.slice(0,5).map(e=>`Changed ${new Date(e.ts).toLocaleDateString('en-GB')} ${tstr(e.ts)} by ${esc(e.by||'—')}: ${esc(e.from)} → ${esc(e.to)}`).join('<br>')}</div>`:''}</div></div>
+  <div class="dlg-f">${mgr?'<button class="btn danger" id="pdel">Delete</button>':''}${p.paid?(mgr?'<button class="btn" id="pedit">Edit payment</button>':''):(S.mode!=='readonly'?'<button class="btn pri" id="ppay">Pay supplier</button>':'')}</div>`,d=>{
+   const pp=d.querySelector('#ppay');if(pp)pp.onclick=()=>supPayForm(p,false);
+   const pe=d.querySelector('#pedit');if(pe)pe.onclick=()=>supPayForm(p,true);
+   const pd=d.querySelector('#pdel');if(pd)pd.onclick=()=>confirmBox('Delete this purchase?','The bill is removed from reports. Stock is not reduced; do a count if the goods were never received.','Delete',()=>upsert('pur/'+p._doc,{},{o:{[p.id]:{del:true}}}),true)})}
+function supPayForm(p,editing){const cur=editing?pmKey(p):'cash';const who=S.myName||(cashier?staffName(cashier):'')||'Manager';const plain=x=>String(x).replace(/<[^>]+>/g,'');
+  openModal(`<div class="dlg-h"><h2>${editing?'Edit payment':'Pay'} · ${esc(supName(p.sup))} ${aed(p.total)}</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b">
+   <label class="field"><span class="lbl">Paid by</span><select id="pm">${Object.entries(PMETH).map(([k,v])=>`<option value="${k}" ${k===cur?'selected':''}>${v}</option>`).join('')}</select></label>
+   <div class="fgrid"><label class="field"><span class="lbl">Payment date</span><input id="pdt" type="date" max="${today()}" value="${esc(editing?(p.payDate||p.date):today())}"></label>
+    <label class="field"><span class="lbl">Reference (optional)</span><input id="pref" value="${esc(p.payRef||'')}" placeholder="Cheque or transfer no."></label></div>
+   <p class="small" id="pwarn" style="margin:0;color:var(--warn)"></p></div>
+   <div class="dlg-f">${editing?'<button class="btn danger" id="punpaid">Mark as unpaid</button>':''}<button class="btn pri" id="pg">${editing?'Save changes':'Mark paid'}</button></div>`,dd=>{
+    const warn=()=>{const m=dd.querySelector('#pm').value,dt=dd.querySelector('#pdt').value;const days=new Set();
+      if(editing&&p.drawer&&p.payDate&&S.closes[p.payDate]&&S.closes[p.payDate].closed)days.add(p.payDate);if(m==='cash'&&dt&&S.closes[dt]&&S.closes[dt].closed)days.add(dt);
+      dd.querySelector('#pwarn').textContent=days.size?`Day close for ${[...days].map(dstr).join(' and ')} is already done. Changing cash paid from the drawer changes that day's expected cash; tell whoever counted it.`:''};
+    dd.querySelector('#pm').onchange=warn;dd.querySelector('#pdt').onchange=warn;warn();
+    const save=async data=>{try{if(editing){const eid=uid('e');data.edits={[eid]:{ts:Date.now(),by:who,from:plain(payLabel(p)),to:data.paid?plain(payLabel(Object.assign({},p,data))):'Unpaid'}}}
+        await upsert('pur/'+p._doc,{},{o:{[p.id]:data}});closeModal();toast(editing?'Payment updated':'Supplier bill paid')}catch(e){fail(e)}};
+    dd.querySelector('#pg').onclick=()=>{const m=dd.querySelector('#pm').value;const dt=dd.querySelector('#pdt').value||today();if(dt>today()){toast('The payment date cannot be in the future.');return}
+      save({paid:true,method:m==='cashout'?'cash':m,drawer:m==='cash',payDate:dt,payTs:p.payTs||Date.now(),payRef:dd.querySelector('#pref').value.trim().slice(0,40)})};
+    const un=dd.querySelector('#punpaid');if(un)un.onclick=()=>save({paid:false,method:'',drawer:false,payDate:'',payRef:''})})}
 function wasteForm(id){
   openModal(`<div class="dlg-h"><h2>Record wastage</h2><button class="btn ghost" data-close>Cancel</button></div>
   <div class="dlg-b"><label class="field"><span class="lbl">Material</span><select id="w_i">${invItems().map(v=>`<option value="${v.id}" ${v.id===id?'selected':''}>${esc(v.name)} (${esc(v.unit)})</option>`).join('')}</select></label>
