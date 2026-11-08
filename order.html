@@ -182,6 +182,7 @@ function billSheet(id){const o=S.orders.find(x=>x.id===id);if(!o)return;openShee
     :'<p class="muted">The cafe confirms the bill when it accepts your order.</p>';
   $('#modal').innerHTML=`<div class="ov" data-ov><div class="sheet" role="dialog" aria-modal="true" aria-label="Bill"><div class="grab"></div><div class="sh-h"><h2>${o.receipt?'Tax invoice':'Your bill'}${o.token?' · token '+esc(o.token):o.ticketNo?' · '+esc(o.ticketNo):''}</h2><button class="btn ghost sm" data-a="closeSheet">Close</button></div>${body}
     ${o.receipt?'<button class="btn" data-a="copyBill" data-id="'+o.id+'">Copy invoice</button>':''}</div></div>`}
+function modsFor(itemId){const it=itemsById()[itemId];const c=((S.pub&&S.pub.cats)||[]).find(x=>it&&x.id===it.c);return c&&Array.isArray(c.m)?c.m:((S.pub&&S.pub.mods)||[])}
 function cleanCart(){const m=itemsById();const before=cart.length;cart=cart.filter(l=>m[l.i]&&m[l.i].a);if(cart.length!==before)saveCart()}
 
 /* ---------- paint ---------- */
@@ -222,14 +223,13 @@ let openSheet=null;
 function closeSheet(){$('#modal').innerHTML='';openSheet=null}
 function checkout(){openSheet=()=>{const p=S.pub,m=itemsById();const t=totals();
   if(!PAYS[form.pay])form.pay='cash';
-  const mods=p.mods||[];
   const errs=computeErrs();
   const sc=$('#modal .sheet');const scroll=sc?sc.scrollTop:0;
   $('#modal').innerHTML=`<div class="ov" data-ov><div class="sheet" role="dialog" aria-modal="true" aria-label="Your order"><div class="grab"></div>
    <div class="sh-h"><h2>Your order</h2><button class="btn ghost sm" data-a="closeSheet">Close</button></div>
    <div>${cart.map((l,ix)=>{const it=m[l.i];return `<div class="line"><div><b>${esc(it?it.n:l.n)}</b><div class="small muted num">${fmt(it?it.p:0)} each</div></div>
      <div class="qty"><button data-a="q" data-ix="${ix}" data-d="-1" aria-label="One less">−</button><span>${l.q}</span><button data-a="q" data-ix="${ix}" data-d="1" aria-label="One more">+</button></div>
-     ${mods.length?`<div class="mods">${mods.map(x=>`<button class="chip ${l.m.includes(x)?'on':''}" data-a="mod" data-ix="${ix}" data-v="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}</div>`}).join('')}</div>
+     ${modsFor(l.i).length?`<div class="mods">${modsFor(l.i).map(x=>`<button class="chip ${l.m.includes(x)?'on':''}" data-a="mod" data-ix="${ix}" data-v="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}</div>`}).join('')}</div>
    <div class="field"><span class="lbl">How do you want it?</span><div class="seg">${Object.entries(TYPES).map(([k,v])=>`<button class="${form.type===k?'on':''}" data-a="type" data-v="${k}">${v}</button>`).join('')}</div></div>
    ${form.type==='delivery'?`<label class="field"><span class="lbl">Deliver to</span><textarea id="fAddr" rows="2" placeholder="Building, shop or flat number, landmark">${esc(form.address)}</textarea>${p.area?`<span class="small muted">We deliver to: ${esc(p.area)}</span>`:''}</label>`:''}
    ${form.type==='car'?`<label class="field"><span class="lbl">Car plate and colour</span><input id="fCar" value="${esc(form.car)}" placeholder="e.g. Dubai K 48213, white Patrol" autocomplete="off"></label>`:''}
@@ -279,7 +279,7 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-a]'
   else if(a==='copyBill'){const o=S.orders.find(x=>x.id===el.dataset.id);if(o&&o.receipt){try{await navigator.clipboard.writeText(o.receipt);toast('Invoice copied')}catch(x){toast('Could not copy')}}}
   else if(a==='seen'){ls.set('wko_seen_'+el.dataset.id,true);paint()}
   else if(a==='again'){const o=S.orders.find(x=>x.id===el.dataset.id);if(!o)return;let skipped=0;
-    (o.lines||[]).forEach(l=>{const it=m[l.i];if(!it||!it.a){skipped++;return}cart.push({i:l.i,n:it.n,q:l.q,m:(l.m||[]).filter(x=>(S.pub.mods||[]).includes(x))})});saveCart();paint();
+    (o.lines||[]).forEach(l=>{const it=m[l.i];if(!it||!it.a){skipped++;return}cart.push({i:l.i,n:it.n,q:l.q,m:(l.m||[]).filter(x=>modsFor(l.i).includes(x))})});saveCart();paint();
     toast(skipped?'Added. Some items are not available right now.':'Added to your order');if(cart.length)checkout()}
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal').innerHTML)closeSheet();

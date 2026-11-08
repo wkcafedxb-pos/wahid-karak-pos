@@ -138,6 +138,9 @@ tr.click{cursor:pointer}tr.click:hover td{background:var(--surface-2)}
 .tile .p{margin-top:auto;font-family:var(--f-mono);font-weight:600;color:var(--karak)}
 .tile .dot{position:absolute;top:10px;right:10px;width:8px;height:8px;border-radius:50%}
 .tile .inc{position:absolute;bottom:8px;right:10px;background:var(--karak);color:var(--on-karak);border-radius:999px;font-size:.75rem;font-weight:700;padding:1px 7px;font-family:var(--f-mono)}
+.tile .sbrow{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;margin-top:2px}.tile .sbrow .sb{margin-top:0}
+.tile .lim{font-size:.68rem;line-height:1.2;color:var(--muted)}
+.tiles{grid-auto-rows:minmax(min-content,auto)}.tile{height:auto}
 .tile .sb{position:static;align-self:flex-start;margin-top:3px;border-radius:999px;font-size:.68rem;font-weight:800;padding:1px 7px;font-family:var(--f-mono);letter-spacing:.02em}
 .tile.st-low{border-color:var(--warn);background:linear-gradient(0deg,var(--warn-soft),var(--surface) 70%)}
 .tile.st-low .sb{background:var(--warn);color:var(--surface)}
@@ -360,7 +363,7 @@ function LocalDB(){
 /* ---------- state ---------- */
 const DEF_SETTINGS={name:'Wahid Karak Cafe LLC',addr:'Mina Bazar, Al Fahidi, Dubai, UAE',phone:'',trn:'',vat:5,inclusive:true,
   footer:'Shukran! Visit again.',stampEvery:10,tables:8,managerPin:'',licenseExp:'',
-  mods:['No sugar','Less sugar','Extra sugar','Strong','Extra hot','Parcel'],
+  mods:['No sugar','Less sugar','Extra sugar','Strong','Extra hot','Normal','Spicy','Extra spicy','Parcel'],
   ownerWa:'',cover:7,platforms:[{id:'talabat',name:'Talabat',comm:25},{id:'deliveroo',name:'Deliveroo',comm:28},{id:'careem',name:'Careem',comm:25},{id:'noon',name:'Noon Food',comm:22}],
   expCats:['Supplies','Rent','DEWA','Salaries','Gas cylinder','Internet & phone','Maintenance','Licence & fees','Other']};
 const CAT_COLORS=['var(--karak)','var(--cardamom)','var(--saffron)','#8B5CF6','#0E7490','#BE185D','#65A30D','#B45309'];
@@ -547,7 +550,7 @@ RENDER.sell=function(){
   const tiles=shown.map(i=>{const ci=cats.findIndex(c=>c.id===i.cat);const x=stx[i.id];const lv=x.lim&&S.inv.items[x.lim];
     const badge=x.state==='low'?`<span class="sb">${x.left} left</span>`:x.state==='out'?'<span class="sb">Out</span>':x.state==='sold'?'<span class="sb">Sold out</span>':'';
     const tip=x.state==='low'?`About ${x.left} more can be made${lv?' ('+lv.name+' is low)':''}`:x.state==='out'?`${lv?lv.name:'An ingredient'} has run out`:x.state==='sold'?'Marked sold out for today':'';
-    return `<button class="tile ${x.state!=='ok'?'st-'+x.state:''}" data-a="add" data-id="${i.id}" title="${esc(tip)}" aria-label="${esc(i.name+' '+fmt(i.price)+(tip?'. '+tip:''))}"><span class="dot" style="background:${CAT_COLORS[(ci<0?0:ci)%CAT_COLORS.length]}"></span><span class="n">${esc(i.name)}</span>${badge}<span class="p">${fmt(i.price)}</span>${inCart[i.id]?`<span class="inc">×${inCart[i.id]}</span>`:''}</button>`}).join('');
+    return `<button class="tile ${x.state!=='ok'?'st-'+x.state:''}" data-a="add" data-id="${i.id}" title="${esc(tip)}" aria-label="${esc(i.name+' '+fmt(i.price)+(tip?'. '+tip:''))}"><span class="dot" style="background:${CAT_COLORS[(ci<0?0:ci)%CAT_COLORS.length]}"></span><span class="n">${esc(i.name)}</span>${badge?`<span class="sbrow">${badge}${(x.state==='low'||x.state==='out')&&lv?`<span class="lim">${x.state==='out'?'No ':''}${esc(lv.name)}${x.state==='low'?' '+fmt(Math.max(0,stock[x.lim]||0))+' '+esc(lv.unit||''):''}</span>`:''}</span>`:''}<span class="p">${fmt(i.price)}</span>${inCart[i.id]?`<span class="inc">×${inCart[i.id]}</span>`:''}</button>`}).join('');
   const nT=Object.keys(S.tickets).length;
   return `<div class="sell">
    <section class="menu-side">
@@ -753,12 +756,19 @@ function confirmBox(title,msg,okLabel,fn,danger){openModal(`<div class="dlg-h"><
 
 /* ---------- line editor / pickers ---------- */
 function catMods(catId){return modsForCat((S.menu.cats||[]).find(x=>x.id===catId))}
-function modsForCat(c){const all=S.settings.mods||[];
-  if(c&&Array.isArray(c.mods))return all.filter(m=>c.mods.includes(m));
-  const n=((c&&c.name)||'').toLowerCase();
+const OLD_MODS=['No sugar','Less sugar','Extra sugar','Strong','Extra hot','Parcel'];
+function defaultMod(c,m){const n=((c&&c.name)||'').toLowerCase();const x=m.toLowerCase();
   const hot=/tea|karak|chai|coffee|qahwa|nescafe|milk|latte|masala|sulaimani/.test(n);
   const sweet=hot||/juice|shake|mojito|lassi|smoothie|lemon/.test(n);
-  return all.filter(m=>{const x=m.toLowerCase();if(/sugar/.test(x))return sweet;if(/strong|hot/.test(x))return hot;return true})}
+  const food=/sandwich|paratha|breakfast|snack|samosa|food|roll|burger|shawarma|omelet|chana|egg|meal|rice|biryani|fries|chips|kebab|wrap/.test(n);
+  if(/spic|chil|mild|normal|onion|garlic|mayo|ketchup|sauce|cheese|well done|no salt/.test(x))return food;
+  if(/sugar|sweet/.test(x))return sweet;
+  if(/strong|hot|ice|milk/.test(x))return hot||(/ice/.test(x)&&sweet);
+  return true}
+function modsForCat(c){const all=S.settings.mods||[];
+  // options chosen in Menu → Categories; options added later follow the defaults until you change them
+  if(c&&Array.isArray(c.mods)){const known=Array.isArray(c.modsKnown)?c.modsKnown:OLD_MODS;return all.filter(m=>known.includes(m)?c.mods.includes(m):defaultMod(c,m))}
+  return all.filter(m=>defaultMod(c,m))}
 function itemMods(itemId){const it=S.menu.items[itemId];return catMods(it&&it.cat)}
 function editLine(ix){const l=cart.lines[ix];if(!l)return;let m=(l.m||[]).slice();
   const draw=()=>openModal(`<div class="dlg-h"><h2>${esc(l.n)}</h2><button class="btn ghost" data-close>Done</button></div>
@@ -1360,13 +1370,13 @@ function itemForm(id){const it=id?S.menu.items[id]:{price:'',active:true,recipe:
    const del=d.querySelector('#mdel');if(del)del.onclick=()=>upsert('cfg/menu',{cats:[],items:{}},{items:{[id]:{del:true,active:false}}}).then(()=>{closeModal();toast('Deleted')},fail)})}
 function catModsDraft(c){return modsForCat(Object.assign({},c,{mods:undefined}))}
 function catsForm(){let cats=clone({x:S.menu.cats||[]}).x;
-  const draw=()=>openModal(`<div class="dlg-h"><h2>Categories</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b"><p class="small muted">"Stamps" means each cup sold in that category earns a loyalty stamp. Tap the options that suit each category; only those show for its items (on the till and for online customers).</p><div class="stack" style="gap:12px">${cats.map((c,i)=>`<div class="stack" style="gap:6px;border-bottom:1px dashed var(--line);padding-bottom:10px"><div class="row" style="flex-wrap:nowrap"><input data-cn="${i}" value="${esc(c.name)}" style="flex:1"><label class="row small" style="flex-wrap:nowrap"><input type="checkbox" data-cs="${i}" ${c.stamps?'checked':''}>Stamps</label><button class="btn sm ghost" data-up="${i}" aria-label="Move up">↑</button><button class="btn sm ghost" data-cx="${i}" aria-label="Remove">✕</button></div><div class="row" style="gap:6px">${(S.settings.mods||[]).map(m=>`<button type="button" class="chip ${(Array.isArray(c.mods)?c.mods:catModsDraft(c)).includes(m)?'on':''}" data-cm="${i}" data-m="${esc(m)}">${esc(m)}</button>`).join('')}</div></div>`).join('')}</div><button class="btn" id="cadd">+ Category</button></div><div class="dlg-f"><button class="btn pri" id="csave">Save categories</button></div>`,d=>{
+  const draw=()=>openModal(`<div class="dlg-h"><h2>Categories</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b"><p class="small muted">"Stamps" means each cup sold in that category earns a loyalty stamp. Tap the options that suit each category; only those show for its items (on the till and for online customers).</p><div class="stack" style="gap:12px">${cats.map((c,i)=>`<div class="stack" style="gap:6px;border-bottom:1px dashed var(--line);padding-bottom:10px"><div class="row" style="flex-wrap:nowrap"><input data-cn="${i}" value="${esc(c.name)}" style="flex:1"><label class="row small" style="flex-wrap:nowrap"><input type="checkbox" data-cs="${i}" ${c.stamps?'checked':''}>Stamps</label><button class="btn sm ghost" data-up="${i}" aria-label="Move up">↑</button><button class="btn sm ghost" data-cx="${i}" aria-label="Remove">✕</button></div><div class="row" style="gap:6px">${(S.settings.mods||[]).map(m=>`<button type="button" class="chip ${(Array.isArray(c.mods)?modsForCat(c):catModsDraft(c)).includes(m)?'on':''}" data-cm="${i}" data-m="${esc(m)}">${esc(m)}</button>`).join('')}</div></div>`).join('')}</div><button class="btn" id="cadd">+ Category</button></div><div class="dlg-f"><button class="btn pri" id="csave">Save categories</button></div>`,d=>{
     const sync=()=>{d.querySelectorAll('[data-cn]').forEach(x=>cats[+x.dataset.cn].name=x.value);d.querySelectorAll('[data-cs]').forEach(x=>cats[+x.dataset.cs].stamps=x.checked)};
-    d.querySelectorAll('[data-cm]').forEach(b=>b.onclick=()=>{sync();const c=cats[+b.dataset.cm];const cur=Array.isArray(c.mods)?c.mods.slice():catModsDraft(c);const m=b.dataset.m;c.mods=cur.includes(m)?cur.filter(x=>x!==m):cur.concat([m]);draw()});
+    d.querySelectorAll('[data-cm]').forEach(b=>b.onclick=()=>{sync();const c=cats[+b.dataset.cm];const cur=Array.isArray(c.mods)?modsForCat(c):catModsDraft(c);const m=b.dataset.m;c.mods=cur.includes(m)?cur.filter(x=>x!==m):cur.concat([m]);draw()});
     d.querySelector('#cadd').onclick=()=>{sync();cats.push({id:uid('k'),name:'New category',stamps:false,mods:[]});draw()};
     d.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{sync();const c=cats[+b.dataset.cx];if(menuItems().some(i=>i.cat===c.id)){toast('Move its items to another category first.');return}cats.splice(+b.dataset.cx,1);draw()});
     d.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>{sync();const i=+b.dataset.up;if(i>0){[cats[i-1],cats[i]]=[cats[i],cats[i-1]];draw()}});
-    d.querySelector('#csave').onclick=()=>{sync();cats.forEach(c=>{if(!Array.isArray(c.mods))c.mods=catModsDraft(c)});upsert('cfg/menu',{cats:[],items:{}},{cats}).then(()=>{closeModal();toast('Saved')},fail)}});
+    d.querySelector('#csave').onclick=()=>{sync();cats.forEach(c=>{c.mods=Array.isArray(c.mods)?modsForCat(c):catModsDraft(c);c.modsKnown=(S.settings.mods||[]).slice()});upsert('cfg/menu',{cats:[],items:{}},{cats}).then(()=>{closeModal();toast('Saved')},fail)}});
   draw()}
 
 /* ---------- EXPENSES ---------- */
