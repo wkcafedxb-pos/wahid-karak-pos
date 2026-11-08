@@ -1128,6 +1128,7 @@ function codDeliver(id){const t=S.tickets[id];if(!t){toast('This order is alread
   openModal(`<div class="dlg-h"><h2>Delivered · ${esc(t.no)}</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b">
    <div class="tl total"><span>Collect</span><span>${aed(tot)}</span></div>
    <div class="stack" style="gap:8px"><button class="btn pri big" data-pm="cash">Cash received</button><button class="btn big" data-pm="card">Card payment received</button></div>
+   ${S.duty==='delivery'?`<p class="small muted" style="margin:0">Cash stays under <b>Cash with me</b> until the counter counts it and taps <b>Receive</b>. It is not added to the drawer before that.</p>`:''}
    <p class="small muted" style="margin:0">Not paid? Leave it open and tell the counter.</p></div>`,d=>{
     d.querySelectorAll('[data-pm]').forEach(b=>b.onclick=async()=>{const pm=b.dataset.pm;d.querySelectorAll('[data-pm]').forEach(x=>x.disabled=true);
       try{const saved=cart;cart={lines:clone({x:t.lines}).x||[],type:'deliv',table:'',car:'',plat:'own',cust:t.cust||'',disc:t.disc||null,note:t.note||'',ticket:t.id,rider:t.rider||(S.duty==='delivery'?S.myName:''),delivTs:Date.now(),collector:pm==='cash'&&S.duty==='delivery'?S.myName:''};
@@ -1156,13 +1157,13 @@ function webDeliver(id){const w=S.web[id];if(!w)return;const t=S.tickets[w.ticke
   openModal(`<div class="dlg-h"><h2>${already?'Payment received':w.type==='delivery'?'Delivered':'Handed over'} · ${esc(t.no)}</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b">
    <div class="tl total"><span>Bill</span><span>${aed(tot)}</span></div>
    <p class="small" style="margin:0">Customer chose: <b>${esc(WPAY[w.pay]||'Cash')}</b></p>
-   <div class="stack" style="gap:8px"><button class="btn pri big" data-pm="cash">Cash received</button><button class="btn big" data-pm="card">Card payment received</button>${already?'':'<button class="btn" data-pm="none">Delivered, not paid yet</button>'}</div></div>`,d=>{
+   <div class="stack" style="gap:8px"><button class="btn pri big" data-pm="cash">Cash received</button><button class="btn big" data-pm="card">Card payment received</button>${already?'':'<button class="btn" data-pm="none">Delivered, not paid yet</button>'}</div>${S.duty==='delivery'?`<p class="small muted" style="margin:0">Cash stays under <b>Cash with me</b> until the counter counts it and taps <b>Receive</b>. It is not added to the drawer before that.</p>`:''}</div>`,d=>{
     d.querySelectorAll('[data-pm]').forEach(b=>b.onclick=async()=>{const pm=b.dataset.pm;d.querySelectorAll('[data-pm]').forEach(x=>x.disabled=true);
       const rider=t.rider||w.rider||(S.duty==='delivery'?S.myName:'');
       try{if(pm==='none'){await queued('tickets/'+t.id,()=>DB.doc('tickets/'+t.id).update({status:'done',delivTs:Date.now(),rider}));await upsert('weborders/'+id,{},{status:'delivered',deliveredTs:Date.now(),rider});closeModal();toast('Marked delivered. Collect payment later from Online orders.');return}
         await upsert('weborders/'+id,{},{deliveredTs:w.deliveredTs||Date.now()});
         const saved=cart;cart={lines:clone({x:t.lines}).x||[],type:t.type||'deliv',table:'',car:t.car||'',plat:t.plat||'',cust:t.cust||'',disc:t.disc||null,note:t.note||'',ticket:t.id,rider,delivTs:t.delivTs||Date.now(),collector:S.duty==='delivery'?S.myName:''};
-        const o=await finalize({[pm]:tot},pm==='cash'?tot:0,0,'');cart=saved;saveCart();closeModal();paint();toast(`Paid by ${pm} · token ${o.no}`)}
+        const o=await finalize({[pm]:tot},pm==='cash'?tot:0,0,'');cart=saved;saveCart();closeModal();paint();toast(o.collector&&pm==='cash'?`Cash ${aed(tot)} is with you · hand it to the counter`:`Paid by ${pm} · token ${o.no}`)}
       catch(e){fail(e);d.querySelectorAll('[data-pm]').forEach(x=>x.disabled=false)}})})}
 function newKey(){const a=new Uint8Array(18);crypto.getRandomValues(a);return Array.from(a,b=>'abcdefghjkmnpqrstuvwxyz23456789'[b%31]).join('')}
 function webLinkHtml(id){const c=S.cust[id];if(!c)return'';
@@ -1468,20 +1469,20 @@ function expForm(){openModal(`<div class="dlg-h"><h2>New expense</h2><button cla
 /* ---------- DAY CLOSE ---------- */
 const DENOMS=[1000,500,200,100,50,20,10,5,1,0.5,0.25];
 function drawerExpected(k){const cl=S.closes[k]||{};const os=ordersOn(k).filter(live);
-  const cashSales=os.reduce((s,o)=>s+(o.pay.cash||0),0);
+  const cashSales=os.filter(o=>!o.collector).reduce((s,o)=>s+(o.pay.cash||0),0);
   let khata=0;custList().forEach(c=>Object.values(c.tx||{}).forEach(t=>{if(t.t==='pay'&&t.method==='cash'&&t.date===k)khata+=+t.amt}));
   const exp=Object.values(S.exp).filter(e=>!e.del&&e.date===k&&e.drawer).reduce((s,e)=>s+(+e.amt||0),0);
   const sup=purList().filter(p=>p.drawer&&p.payDate===k).reduce((s,p)=>s+(+p.total||0),0);
-  let rshort=0;Object.values(cl.hand||{}).forEach(x=>{const kd=x.kind||'hand';if(kd==='hand')rshort+=+x.diff||0;else if(kd==='repay')rshort+=+x.got||0});
-  const fl=+cl.float||0;return{float:fl,cashSales:r2(cashSales),khata:r2(khata),exp:r2(exp),sup:r2(sup),rshort:r2(rshort),expected:r2(fl+cashSales+khata-exp-sup+rshort)}}
+  let rgot=0,rback=0;Object.values(cl.hand||{}).forEach(x=>{const kd=x.kind||'hand';if(kd==='hand')rgot+=+x.got||0;else if(kd==='repay')rback+=+x.got||0});
+  const fl=+cl.float||0;return{float:fl,cashSales:r2(cashSales),rgot:r2(rgot),rback:r2(rback),khata:r2(khata),exp:r2(exp),sup:r2(sup),expected:r2(fl+cashSales+rgot+rback+khata-exp-sup)}}
 RENDER.close=function(){const k=today();const cl=S.closes[k]||{};const e=drawerExpected(k);const a=agg(ordersOn(k),Object.values(S.exp).filter(x=>x.date===k));
   const past=Object.values(S.closes).filter(c=>c.closed).sort((x,y)=>y.date.localeCompare(x.date)).slice(0,10);
   return `<div class="topbar"><h1>Day close</h1><span class="muted">${dstr(k)}</span></div>
   <div class="grid2"><div class="panel stack">
    <h2>Cash drawer</h2>
    <div class="row" style="flex-wrap:nowrap"><label class="field" style="flex:1"><span class="lbl">Opening float (AED)</span><input id="fl" type="number" step="0.25" value="${esc(cl.float!=null?cl.float:'')}" placeholder="Cash in the drawer at opening"></label><button class="btn" data-a="saveFloat" style="align-self:flex-end">Save float</button></div>
-   <div class="tl"><span>Opening float</span><span>${fmt(e.float)}</span></div><div class="tl"><span>+ Cash sales</span><span>${fmt(e.cashSales)}</span></div><div class="tl"><span>+ Khata paid in cash</span><span>${fmt(e.khata)}</span></div><div class="tl"><span>− Expenses paid from drawer</span><span>${fmt(e.exp)}</span></div><div class="tl"><span>− Supplier bills paid from drawer</span><span>${fmt(e.sup)}</span></div>${Math.abs(e.rshort)>=0.005?`<div class="tl"><span>${e.rshort<0?'− Delivery cash short (on their balance)':'+ Delivery shortage paid back / extra'}</span><span>${fmt(Math.abs(e.rshort))}</span></div>`:''}
-   ${(()=>{const h=Object.entries(ridersHolding());const hs=Object.values((S.closes[k]||{}).hand||{});return (h.length?`<div class="banner" style="cursor:default;white-space:normal;display:block">Delivery cash is counted above but is still with the delivery staff: ${h.map(([n,v])=>`<b>${esc(n)}</b> ${aed(v)} <button class="btn sm" data-a="riderCash" data-v="${esc(n)}">Receive</button>`).join(' ')}</div>`:'')+(hs.length?`<div class="small muted">Delivery cash today: ${hs.map(x=>(x.kind||'hand')==='hand'?`${esc(x.rider)} handed ${fmt(x.got)}${Math.abs(x.diff)>=0.005?` (${x.diff<0?'short':'extra'} ${fmt(Math.abs(x.diff))})`:''} at ${tstr(x.ts)}`:`${esc(x.rider)} ${(RSK[x.kind]||x.kind).toLowerCase()} ${fmt(x.got)} at ${tstr(x.ts)}`).join(' · ')}</div>`:'')+rsBanner()})()}
+   <div class="tl"><span>Opening float</span><span>${fmt(e.float)}</span></div><div class="tl"><span>+ Cash sales at the counter</span><span>${fmt(e.cashSales)}</span></div>${e.rgot?`<div class="tl"><span>+ Cash received from delivery staff</span><span>${fmt(e.rgot)}</span></div>`:''}${e.rback?`<div class="tl"><span>+ Shortage paid back by delivery staff</span><span>${fmt(e.rback)}</span></div>`:''}<div class="tl"><span>+ Khata paid in cash</span><span>${fmt(e.khata)}</span></div><div class="tl"><span>− Expenses paid from drawer</span><span>${fmt(e.exp)}</span></div><div class="tl"><span>− Supplier bills paid from drawer</span><span>${fmt(e.sup)}</span></div>
+   ${(()=>{const h=Object.entries(ridersHolding());const hs=Object.values((S.closes[k]||{}).hand||{});return (h.length?`<div class="banner" style="cursor:default;white-space:normal;display:block">Not in the drawer yet, still with the delivery staff: ${h.map(([n,v])=>`<b>${esc(n)}</b> ${aed(v)} <button class="btn sm" data-a="riderCash" data-v="${esc(n)}">Receive</button>`).join(' ')}</div>`:'')+(hs.length?`<div class="small muted">Delivery cash today: ${hs.map(x=>(x.kind||'hand')==='hand'?`${esc(x.rider)} handed ${fmt(x.got)}${Math.abs(x.diff)>=0.005?` (${x.diff<0?'short':'extra'} ${fmt(Math.abs(x.diff))})`:''} at ${tstr(x.ts)}`:`${esc(x.rider)} ${(RSK[x.kind]||x.kind).toLowerCase()} ${fmt(x.got)} at ${tstr(x.ts)}`).join(' · ')}</div>`:'')+rsBanner()})()}
    <div class="tl total"><span>Should be in drawer</span><span>${aed(e.expected)}</span></div>
    <h3>Count the notes and coins</h3><div class="denoms">${DENOMS.map(d=>`<label>AED ${d<1?d.toFixed(2):d}<input data-den="${d}" type="number" min="0" inputmode="numeric" placeholder="0" value="${cl.den&&cl.den[String(d).replace('.','_')]||''}"></label>`).join('')}</div>
    <div class="tl total"><span>Counted</span><span id="cnt">${aed(cl.counted||0)}</span></div><div class="tl"><span>Difference</span><span id="dif">${cl.counted!=null?fmt(cl.counted-e.expected):'—'}</span></div>
