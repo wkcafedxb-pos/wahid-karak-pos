@@ -98,6 +98,7 @@ main.fill{overflow:hidden;padding-block:12px}
 .btn.danger{color:var(--bad)}
 .btn.sm{padding:4px 10px;min-height:30px;font-size:.82rem}
 .btn.big{min-height:56px;font-size:1.1rem;padding:10px 18px}
+.btn.two{flex-direction:column;gap:1px;white-space:normal;line-height:1.15;text-align:center;max-width:100%}.btn.two small{font-size:.75rem;font-weight:500;opacity:.9}.btn.two b{overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .btn[disabled]{opacity:.45;cursor:not-allowed}
 input,select,textarea{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:38px;width:100%}
 textarea{min-height:70px;resize:vertical}
@@ -149,6 +150,11 @@ tr.click{cursor:pointer}tr.click:hover td{background:var(--surface-2)}
 .tile.st-out .sb{background:var(--bad);color:var(--surface)}
 .tile.st-sold{border-color:var(--line);border-style:dashed;background:var(--surface-2)}
 .tile.st-sold .n,.tile.st-sold .p{color:var(--muted)}.tile.st-sold .sb{background:var(--muted);color:var(--surface)}
+.chip.hot{background:var(--karak);border-color:var(--karak);color:var(--on-karak);font-weight:700;animation:hotpulse 1.8s ease-out infinite}
+.chip.hot b{background:var(--on-karak);color:var(--karak);border-radius:999px;padding:0 7px;min-width:20px;text-align:center}
+@keyframes hotpulse{0%{box-shadow:0 0 0 0 rgba(196,104,40,.6)}70%{box-shadow:0 0 0 9px rgba(196,104,40,0)}100%{box-shadow:0 0 0 0 rgba(196,104,40,0)}}
+@media (prefers-reduced-motion:reduce){.chip.hot{animation:none}}
+.outnote{border:1px solid var(--line);border-left:4px solid var(--ok,#15803d);background:var(--surface-2);border-radius:8px;padding:8px 10px;font-size:.9rem;line-height:1.3}
 .chip.warnchip{border-color:var(--warn);color:var(--warn);font-weight:700}
 .chip.warnchip.on{background:var(--warn);border-color:var(--warn);color:var(--surface)}
 .cl .sw{font-size:.74rem;font-weight:700;color:var(--bad)}
@@ -557,7 +563,7 @@ RENDER.sell=function(){
    <section class="menu-side">
     <div class="row" style="justify-content:space-between">
       <div class="seg otype" role="tablist" aria-label="Order type">${Object.entries(TYPES).map(([k,l])=>`<button class="${cart.type===k?'on':''}" data-a="otype" data-v="${k}">${l}</button>`).join('')}</div>
-      <div class="row"><button class="chip" data-a="tickets">Open orders <b class="num">${nT}</b></button><button class="chip" data-a="pickCashier">${icon('staff').replace('<svg','<svg width="16" height="16"')} ${esc(cashier?staffName(cashier):'Choose cashier')}</button></div>
+      <div class="row"><button class="chip ${nT?'hot':''}" data-a="tickets" title="${nT?nT+' open order'+(nT>1?'s':'')+' waiting':'No open orders'}">${nT?'● ':''}Open orders <b class="num">${nT}</b>${(()=>{const o=Object.values(S.tickets).filter(x=>x.cod&&x.rider).length;return o?` <span style="font-weight:600">· ${o} out</span>`:''})()}</button><button class="chip" data-a="pickCashier">${icon('staff').replace('<svg','<svg width="16" height="16"')} ${esc(cashier?staffName(cashier):'Choose cashier')}</button></div>
     </div>
     ${typeExtra()}
     <div class="row" style="flex-wrap:nowrap"><input id="q" type="search" placeholder="Search menu or item code" value="${esc(UI.q)}" autocomplete="off" style="flex:1"></div>
@@ -594,8 +600,10 @@ function cartHtml(){
     <div class="tl"><span class="muted">VAT ${S.settings.vat}% ${S.settings.inclusive?'(included)':''}</span><span>${fmt(t.vat)}</span></div>
     <div class="tl total"><span>Total</span><span>${aed(t.total)}</span></div>
     <div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-a="disc" ${cart.lines.length?'':'disabled'}>Discount</button><button class="btn sm" data-a="hold" ${cart.lines.length?'':'disabled'}>${cart.type==='dine'?'Save to table':'Hold'}</button><button class="btn sm" data-a="kitchenSend" ${cart.lines.length?'':'disabled'} title="Send to kitchen before payment">Kitchen</button><button class="btn sm ghost danger" data-a="clear" ${cart.lines.length||cart.ticket?'':'disabled'}>Clear</button></div>
-    ${cart.type==='deliv'&&cart.plat==='own'&&DB&&DB.fb&&S.mode!=='readonly'?`<button class="btn grn big" data-a="codSend" ${cart.lines.length?'':'disabled'}>${cart.rider?'Send with '+esc(cart.rider):'Send out'} · collect on delivery</button>`:''}
-    <button class="btn ${cart.type==='deliv'&&cart.plat==='own'&&DB&&DB.fb?'':'pri'} big" data-a="pay" ${cart.lines.length&&S.mode!=='readonly'?'':'disabled'}>${cart.type==='deliv'&&cart.plat==='own'&&DB&&DB.fb?'Already paid · charge now':'Charge'} ${aed(t.total)}</button>
+    ${(()=>{const ot=cart.ticket&&S.tickets[cart.ticket];const isOut=!!(ot&&ot.cod&&ot.rider);
+      if(isOut)return `<div class="outnote"><b>Already out with ${esc(ot.rider)}</b>${ot.outTs?' since '+tstr(ot.outTs):''} · collecting <b>${aed(t.total)}</b><div class="small muted">${esc(ot.rider)} taps <i>Delivered</i> on his phone when the customer pays. Changed something? Tap <b>Hold</b> to update this order.</div></div>`;
+      return cart.type==='deliv'&&cart.plat==='own'&&DB&&DB.fb&&S.mode!=='readonly'?`<button class="btn grn big two" data-a="codSend" ${cart.lines.length?'':'disabled'}><b>${cart.rider?'Send with '+esc(cart.rider):'Send out'}</b><small>collect ${aed(t.total)} on delivery</small></button>`:''})()}
+    <button class="btn ${cart.type==='deliv'&&cart.plat==='own'&&DB&&DB.fb?'two':'pri'} big" data-a="pay" ${cart.lines.length&&S.mode!=='readonly'?'':'disabled'}>${cart.type==='deliv'&&cart.plat==='own'&&DB&&DB.fb?`<b>Charge now ${aed(t.total)}</b><small>${cart.ticket&&S.tickets[cart.ticket]&&S.tickets[cart.ticket].cod?'only if the money is already here at the counter':'customer already paid'}</small>`:'Charge '+aed(t.total)}</button>
    </div>`;
 }
 function afterSell(){const q=$('#q');if(q){q.oninput=()=>{UI.q=q.value;const pos=q.selectionStart;paint();const n=$('#q');n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}};
@@ -1641,7 +1649,7 @@ function teamPanel(){if(!S.role)return '';const canEdit=S.role==='owner';const m
 
 /* ---------- actions ---------- */
 const A={
-  codSend:()=>{const da=$('#dAddr'),dp=$('#dPhone');if(da)cart.addr=da.value.trim();if(dp)cart.phone=dp.value.trim();
+  codSend:()=>{const ot=cart.ticket&&S.tickets[cart.ticket];if(ot&&ot.cod&&ot.rider){toast('This order is already out with '+ot.rider+'.');return}const da=$('#dAddr'),dp=$('#dPhone');if(da)cart.addr=da.value.trim();if(dp)cart.phone=dp.value.trim();
     if(!cart.rider){toast('Tap who will deliver first.');return}if(!cart.addr&&!cart.phone){toast('Add the address or phone so the delivery person can find the customer.');return}
     cart.cod=true;const tot=calc(cart).total;holdCart(true).then(()=>{const t=Object.values(S.tickets).sort((a,b)=>b.ts-a.ts).find(x=>x.cod);toast('Sent with '+(t&&t.rider||'delivery')+' · collect '+aed(tot));if(t)setTimeout(()=>printText('delivery-bill-'+t.no+'.pdf',codBillText(t),'receipt'),300)})},
   codDone:d=>codDeliver(d.id),
