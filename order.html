@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#21180F">
+<meta name="theme-color" content="#211431">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Wahid Karak">
@@ -34,8 +34,10 @@ h1,h2,h3{font-family:var(--f-display);margin:0;line-height:1.15;text-wrap:balanc
 .wrap{max-width:640px;margin:0 auto;padding-block:14px 120px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px}
 .lbl{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
 .muted{color:var(--muted)}.small{font-size:.86rem}.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
-.hero{background:#21180F;color:#F1EEE9;border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:10px}
-.hero .shop{font-family:var(--f-display);font-weight:800;font-size:1.05rem;color:#E9A84E;letter-spacing:.01em}
+.hero{background:radial-gradient(120% 140% at 85% 0%,#4A2A72 0%,#2A1840 55%,#1E1230 100%);color:#F1EEE9;border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.hero .shop{font-family:var(--f-display);font-weight:800;font-size:1.05rem;color:#E6C887;letter-spacing:.01em;display:flex;align-items:center;gap:10px}
+.hero .shop img{width:52px;height:52px;border-radius:12px;flex:none;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.logo-load{width:110px;height:110px;border-radius:20px;display:block;margin:0 auto 12px}
 .hero h1{font-size:1.6rem;font-weight:800}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
 .chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 12px;font-size:.85rem;font-weight:600;border:1px solid var(--line);background:var(--surface);cursor:pointer;white-space:nowrap}
@@ -99,7 +101,7 @@ textarea{min-height:70px;resize:vertical}
 </style>
 </head>
 <body>
-<main class="wrap" id="app"><div class="empty"><b>Opening the menu…</b></div></main>
+<main class="wrap" id="app"><div class="empty"><img class="logo-load" src="logo-240.png" alt="Wahid Karak Cafe"><b>Opening the menu…</b></div></main>
 <div class="bar" id="bar" hidden></div>
 <div id="modal"></div>
 <div class="toast" id="toast" hidden></div>
@@ -200,7 +202,7 @@ function paint(){if(!S.ready)return;const p=S.pub;
   const recent=S.orders.filter(o=>!ACTIVE.includes(o.status)).slice(0,5);
   const lastDone=S.orders.find(o=>(o.status==='declined'||o.status==='done'||o.status==='delivered')&&Date.now()-(o.declinedTs||o.doneTs||o.ts)<45*60000&&!ls.get('wko_seen_'+o.id,false));
   $('#app').innerHTML=`
-   <section class="hero"><div class="shop">${esc(p.shop||'Wahid Karak')}</div><h1>${first?'Hi '+esc(first)+'!':'Welcome!'} What would you like?</h1>
+   <section class="hero"><div class="shop"><img src="logo-96.png" alt="">${esc(p.shop||'Wahid Karak')}</div><h1>${first?'Hi '+esc(first)+'!':'Welcome!'} What would you like?</h1>
     <div class="chips">${p.stampEvery?`<span class="chip">${ac.stamps%p.stampEvery} of ${p.stampEvery} stamps${ac.stamps>=p.stampEvery?' · free karak waiting':''}</span>`:''}</div></section>
    ${act?`<section class="card" aria-live="polite"><div class="row" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><h2 style="font-size:1.15rem">${esc(TYPES[act.type]||'Order')}${act.ticketNo?' · '+esc(act.ticketNo):''}</h2><span class="small muted">${tstr(act.ts)}</span></div>
      ${steps(act)}<div>${esc(statusLine(act))}</div><div class="small muted">${esc((act.lines||[]).map(l=>l.q+'× '+l.n).join(', '))}</div>
