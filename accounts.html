@@ -358,9 +358,10 @@ function expAcct(cat){return (A.set.expMap||{})[cat]||EXP_MAP_DEF[cat]||'6900'}
 function buildPosDay(d,R){
   const L={};const add=(a,amt,p,vb,dd)=>{amt=r2(amt);if(!amt)return;const k=[a,p||'',vb||''].join('|');const x=L[k]||(L[k]={a,p:p||'',vb:vb||'',v:0});x.v=r2(x.v+amt)};
   const docs=[];let n=0,sales=0,vat=0;const rate=+(A.posSet.vat||A.set.vatRate||5);
+  const sv=vatOn(d)||R.orders.some(o=>o.date===d&&!o.void&&+o.vat)?'S':'';
   for(const o of R.orders){if(o.date!==d||o.void)continue;n++;
     sales+=+o.total||0;vat+=+o.vat||0;
-    add(o.plat?'4010':'4000',-(+o.net||0),'','S');add('2100',-(+o.vat||0),'','S');
+    add(o.plat?'4010':'4000',-(+o.net||0),'',sv);add('2100',-(+o.vat||0),'',sv);
     let paid=0;for(const k in (o.pay||{})){const v=+o.pay[k]||0;paid+=v;
       if(k==='cash')add(o.collector?'1030':'1000',v,o.collector?'e:'+o.collector:'');else if(k==='card')add('1020',v);
       else if(k==='credit')add('1100',v,'c:'+(o.cust||''));else if(k==='platform')add('1110',v,'x:'+(o.plat||'other'));else add('1000',v)}
