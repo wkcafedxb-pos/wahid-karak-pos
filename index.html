@@ -445,9 +445,11 @@ function consumption(){const c={};const inv=S.inv.items;
 function stockNow(){const c=consumption();const m={};for(const it of invItems()){m[it.id]=r2((+it.qty||0)-(c[it.id]||0))}return m}
 function stockState(it,q){if(q<=0)return'out';if(q<=(+it.min||0))return'low';return'ok'}
 function custBal(c){let bal=0,st=0;for(const t of Object.values((c&&c.tx)||{})){if(t.t==='credit')bal+=+t.amt;else if(t.t==='pay')bal-=+t.amt;else if(t.t==='adj')bal+=+t.amt;else if(t.t==='stamp')st+=+t.n;else if(t.t==='redeem')st-=+t.n}return{bal:r2(bal),stamps:st}}
+const vatReg=()=>S.settings.vatReg!==undefined?!!S.settings.vatReg:!!S.settings.trn;
+const vatRate=()=>vatReg()?(+S.settings.vat||0):0;
 function calc(c){const sub=r2(c.lines.reduce((s,l)=>s+l.p*l.q,0));let disc=0;
   if(c.disc){disc=c.disc.type==='pct'?r2(sub*Math.min(100,+c.disc.v||0)/100):Math.min(sub,r2(+c.disc.v||0))}
-  const after=r2(sub-disc);const rate=(+S.settings.vat||0)/100;let total,vat,net;
+  const after=r2(sub-disc);const rate=vatRate()/100;let total,vat,net;
   if(S.settings.inclusive){total=after;vat=r2(total*rate/(1+rate));net=r2(total-vat)}else{net=after;vat=r2(net*rate);total=r2(net+vat)}
   return{sub,disc,net,vat,total}}
 const TYPES={take:'Takeaway',dine:'Dine-in',car:'Car service',deliv:'Delivery'};
@@ -597,7 +599,7 @@ function cartHtml(){
    <div class="cart-f">
     <div class="tl"><span class="muted">Subtotal</span><span>${fmt(t.sub)}</span></div>
     ${t.disc?`<div class="tl"><span class="muted">Discount ${cart.disc.type==='pct'?cart.disc.v+'%':''}</span><span>−${fmt(t.disc)}</span></div>`:''}
-    <div class="tl"><span class="muted">VAT ${S.settings.vat}% ${S.settings.inclusive?'(included)':''}</span><span>${fmt(t.vat)}</span></div>
+    ${vatReg()?`<div class="tl"><span class="muted">VAT ${S.settings.vat}% ${S.settings.inclusive?'(included)':''}</span><span>${fmt(t.vat)}</span></div>`:''}
     <div class="tl total"><span>Total</span><span>${aed(t.total)}</span></div>
     <div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-a="disc" ${cart.lines.length?'':'disabled'}>Discount</button><button class="btn sm" data-a="hold" ${cart.lines.length?'':'disabled'}>${cart.type==='dine'?'Save to table':'Hold'}</button><button class="btn sm" data-a="kitchenSend" ${cart.lines.length?'':'disabled'} title="Send to kitchen before payment">Kitchen</button><button class="btn sm ghost danger" data-a="clear" ${cart.lines.length||cart.ticket?'':'disabled'}>Clear</button></div>
     ${(()=>{const ot=cart.ticket&&S.tickets[cart.ticket];const isOut=!!(ot&&ot.cod&&ot.rider);
@@ -683,7 +685,7 @@ const paper58=()=>String(S.settings.paper||'80')==='58';
 const paperW=()=>paper58()?32:34;
 const docOnRoll=()=>String(S.settings.docPaper||'receipt')!=='a4';
 function wrapW(text,W){return text.split('\n').map(l=>{if(l.length<=W)return l;const out=[];let x=l;while(x.length>W){let cut=x.lastIndexOf(' ',W);if(cut<W/2)cut=W;out.push(x.slice(0,cut).replace(/\s+$/,''));x=x.slice(cut).replace(/^\s+/,'')}if(x)out.push(x);return out.join('\n')}).join('\n')}
-function testReceipt(){const ts=Date.now();const lines=[{n:'Karak Chai',p:1.5,q:2,m:['Less sugar']},{n:'Chips Oman Paratha',p:4,q:1,m:[]}];const sub=7;const rate=(+S.settings.vat||0)/100;const vat=r2(sub*rate/(1+rate));
+function testReceipt(){const ts=Date.now();const lines=[{n:'Karak Chai',p:1.5,q:2,m:['Less sugar']},{n:'Chips Oman Paratha',p:4,q:1,m:[]}];const sub=7;const rate=vatRate()/100;const vat=r2(sub*rate/(1+rate));
   return receiptText({no:'TEST',ts,date:dkey(ts),type:'take',lines,sub,disc:0,net:r2(sub-vat),vat,total:sub,pay:{cash:sub},tendered:10,change:3,by:cashier})}
 function riderNames(){const names=[];const add=(n,pref)=>{n=String(n||'').trim();if(n&&!names.some(x=>x.n.toLowerCase()===n.toLowerCase()))names.push({n,pref})};
   if(S.duty==='delivery')add(S.myName,true);
@@ -740,8 +742,8 @@ function receiptText(o){
   const lr=(a,b)=>{a=String(a);b=String(b);const sp=W-a.length-b.length;return sp>=1?a+' '.repeat(sp)+b:a+'\n'+' '.repeat(Math.max(0,W-b.length))+b};
   L.push(ctr(st.name.toUpperCase()));
   st.addr.split(',').reduce((acc,p)=>{const last=acc[acc.length-1];if(last&&(last+','+p).length<=W)acc[acc.length-1]=last+','+p;else acc.push(p.trim());return acc},[]).forEach(x=>L.push(ctr(x.trim())));
-  if(st.phone)L.push(ctr('Tel '+st.phone));if(st.trn)L.push(ctr('TRN '+st.trn));
-  L.push('');L.push(ctr('TAX INVOICE'));L.push('-'.repeat(W));
+  if(st.phone)L.push(ctr('Tel '+st.phone));if(st.trn&&vatReg())L.push(ctr('TRN '+st.trn));
+  L.push('');L.push(ctr(vatReg()||o.vat?'TAX INVOICE':'RECEIPT'));L.push('-'.repeat(W));
   const d=new Date(o.ts);L.push(lr('Token '+o.no,d.toLocaleDateString('en-GB')+' '+tstr(o.ts)));
   L.push(lr(TYPES[o.type]+(o.table?' '+o.table:''),'By '+staffName(o.by)));
   if(o.car)L.push('Car: '+o.car);if(o.address)L.push(...wrapW('Deliver to: '+o.address,W).split('\n'));if(o.rider)L.push('Delivery by: '+o.rider);if(o.cust&&S.cust[o.cust])L.push('Customer: '+S.cust[o.cust].name);
@@ -749,7 +751,7 @@ function receiptText(o){
   for(const l of o.lines){L.push(lr(`${l.q} x ${l.n}`.slice(0,W-10),fmt(l.p*l.q)));if(l.m&&l.m.length||l.note)L.push('   '+(l.m||[]).concat(l.note?[l.note]:[]).join(', '))}
   L.push('-'.repeat(W));
   L.push(lr('Subtotal',fmt(o.sub)));if(o.disc)L.push(lr('Discount','-'+fmt(o.disc)));
-  L.push(lr('Amount excl. VAT',fmt(o.net)));L.push(lr(`VAT ${st.vat}%`,fmt(o.vat)));
+  if(o.vat){L.push(lr('Amount excl. VAT',fmt(o.net)));L.push(lr(`VAT ${st.vat}%`,fmt(o.vat)))}
   L.push(lr('TOTAL AED',fmt(o.total)));L.push('');
   for(const k in o.pay)L.push(lr(PAYN[k]||k,fmt(o.pay[k])));
   if(o.pay.cash&&o.tendered>o.total)L.push(lr('Cash given',fmt(o.tendered)),lr('Change',fmt(o.change)));
@@ -912,6 +914,7 @@ function agg(orders,exps,purs,movs){
   for(const e of exps){if(e.del)continue;const amt=+e.amt||0;const v=e.vat?r2(amt*5/105):0;a.expNet+=amt-v;a.expVat+=v;a.expCats[e.cat]=(a.expCats[e.cat]||0)+amt;if(e.drawer)a.cashExp+=amt}
   for(const p of purs||[]){if(p.del)continue;a.purch+=+p.total||0;a.purVat+=+p.vat||0}
   for(const m of movs||[]){if(m.del)continue;if(m.t==='waste')a.waste+=+m.val||0;else if(m.t==='count'&&m.val<0)a.waste+=-m.val}
+  if(!vatReg()){a.expNet+=a.expVat;a.expVat=0;a.purVat=0}
   a.profit=a.net-a.cogs-a.waste-a.comm-a.expNet;a.avg=a.n?a.gross/a.n:0;return a}
 function niceMax(v){if(v<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(v)));const f=v/p;return (f<=1?1:f<=2?2:f<=5?5:10)*p}
 function barChart(vals,labels,o){o=o||{};const H=o.h||170,W=640,L=46,R=8,T=10,B=24;const mx=niceMax(Math.max(...vals,0));const n=vals.length;const cw=(W-L-R)/n;
@@ -1003,7 +1006,7 @@ const STMT_K=[['month','This month'],['last','Last month'],['3m','Last 3 months'
 function stmtPeriodLabel(D){return D.k==='all'?'All entries up to '+dstr(D.to):dstr(D.from)+' to '+dstr(D.to)}
 function statementRollText(D){const W=paperW();const st=S.settings,c=D.c;const ctr=x=>{x=String(x);return ' '.repeat(Math.max(0,Math.floor((W-x.length)/2)))+x};
   const lr=(a,b)=>{a=String(a);b=String(b);const sp=W-a.length-b.length;return sp>=1?a+' '.repeat(sp)+b:a.slice(0,Math.max(1,W-b.length-1))+' '+b};
-  const L=[ctr(st.name.toUpperCase()),...wrapW(st.addr,W).split('\n').map(ctr)];if(st.phone)L.push(ctr('Tel '+st.phone));if(st.trn)L.push(ctr('TRN '+st.trn));
+  const L=[ctr(st.name.toUpperCase()),...wrapW(st.addr,W).split('\n').map(ctr)];if(st.phone)L.push(ctr('Tel '+st.phone));if(st.trn&&vatReg())L.push(ctr('TRN '+st.trn));
   L.push('',ctr('STATEMENT OF ACCOUNT'),'-'.repeat(W),...wrapW('Customer: '+c.name,W).split('\n'));if(c.phone)L.push('Phone: '+c.phone);
   L.push(...wrapW('Period: '+stmtPeriodLabel(D),W).split('\n'),'Printed: '+new Date().toLocaleDateString('en-GB')+' '+tstr(Date.now()),'-'.repeat(W),lr('Opening balance',fmt(D.open)),'-'.repeat(W));
   D.rows.forEach(r=>{const d=new Date(r.ts);const dd=pad2(d.getDate())+'/'+pad2(d.getMonth()+1);const det=r.det.replace(/Payment received · /,'Paid ').replace('Payment received','Paid');
@@ -1060,7 +1063,7 @@ setInterval(()=>{if(S.role&&S.role!=='accountant'&&S.duty!=='delivery'&&webNew()
 let pubLast='',pubTimer=null;
 function pubData(){const st=S.settings;const stock=stockNow();
   const items=menuItems().filter(i=>i.active!==false).map(i=>{const x=itemStock(i,stock,0);return{id:i.id,n:i.name,p:+i.price||0,c:i.cat||'',f:!!i.fav,a:x.state!=='out'&&x.state!=='sold'}});
-  return{shop:st.name,addr:st.addr,phone:st.phone||'',on:!!st.webOn,open:st.webOpen||'06:00',close:st.webClose||'23:30',fee:+st.webFee||0,min:+st.webMin||0,max:+st.webMax||300,area:st.webArea||'',
+  return{shop:st.name,addr:st.addr,phone:st.phone||'',vatReg:vatReg(),on:!!st.webOn,open:st.webOpen||'06:00',close:st.webClose||'23:30',fee:+st.webFee||0,min:+st.webMin||0,max:+st.webMax||300,area:st.webArea||'',
     stampEvery:+st.stampEvery||0,mods:st.mods||[],cats:(S.menu.cats||[]).map(c=>({id:c.id,n:c.name,s:!!c.stamps,m:catMods(c.id)})),items}}
 function syncPub(){if(!DB||!DB.fb||!['owner','manager','staff'].includes(S.role)||!S.loaded.menu||!S.loaded.inv||!S.loaded.settings)return;
   clearTimeout(pubTimer);pubTimer=setTimeout(()=>{const d=pubData();const j=JSON.stringify(d);if(j===pubLast)return;pubLast=j;setDoc('pub/menu',Object.assign(d,{ts:Date.now()})).catch(e=>{pubLast='';console.warn(e)})},1500)}
@@ -1420,7 +1423,7 @@ function poView(id,fresh){const p=fresh||S.po[id];if(!p)return;const s=(S.sup.it
 /* ---------- MENU ---------- */
 RENDER.menu=function(){const cats=S.menu.cats||[];const q=UI.menuQ.toLowerCase();const list=menuItems().filter(i=>!q||i.name.toLowerCase().includes(q));
   return `<div class="topbar"><h1>Menu</h1><button class="btn" data-a="cats">Categories (${cats.length})</button><button class="btn pri" data-a="newItem">+ Menu item</button></div>
-  <p class="muted" style="margin:-6px 0 12px;max-width:70ch">Prices include ${S.settings.vat}% VAT${S.settings.inclusive?'':' (currently set to add VAT on top)'}. Add a recipe to each item so stock and profit work out on their own.</p>
+  <p class="muted" style="margin:-6px 0 12px;max-width:70ch">${vatReg()?`Prices include ${S.settings.vat}% VAT${S.settings.inclusive?'':' (currently set to add VAT on top)'}. `:'Not registered for VAT, so no VAT is charged. '}Add a recipe to each item so stock and profit work out on their own.</p>
   <input data-in="menuQ" id="menuQ" placeholder="Search menu" value="${esc(UI.menuQ)}" style="max-width:340px;margin-bottom:10px">
   ${list.length?`<div class="panel tbl-wrap" style="padding:4px 8px"><table><thead><tr><th>Item</th><th>Category</th><th class="r">Price</th><th class="r">Cost</th><th class="r">Margin</th><th>On sale</th></tr></thead><tbody>${list.map(i=>{const c=itemCost(i);const net=S.settings.inclusive?i.price/(1+S.settings.vat/100):+i.price;const mg=net?Math.round((net-c)/net*100):0;const cat=cats.find(x=>x.id===i.cat);
     return `<tr class="click" data-a="editItem" data-id="${i.id}"><td><b>${esc(i.name)}</b>${i.fav?' ★':''}${i.code?` <span class="pill p-mute">${esc(i.code)}</span>`:''}</td><td>${esc(cat?cat.name:'—')}</td><td class="r">${fmt(i.price)}</td><td class="r">${c?fmt(c):'—'}</td><td class="r" style="color:${!c?'var(--muted)':mg<40?'var(--bad)':mg<60?'var(--warn)':'var(--ok)'}">${c?mg+'%':'—'}</td><td>${i.active===false?'<span class="pill p-mute">Hidden</span>':'<span class="pill p-ok">Yes</span>'}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty"><b>No menu items yet</b>Start with your karak chai.</div>'}`};
@@ -1465,7 +1468,7 @@ RENDER.expenses=function(){const m=UI.expMonth;const list=Object.values(S.exp).f
   const a=agg([],list);const cats=Object.entries(a.expCats).sort((x,y)=>y[1]-x[1]);
   const months=[];for(let i=0;i<2;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);months.push(mkey(d))}
   return `<div class="topbar"><h1>Expenses</h1><div class="seg">${months.map(x=>`<button class="${x===m?'on':''}" data-a="expMonth" data-v="${x}">${new Date(x+'-15').toLocaleDateString('en-GB',{month:'long'})}</button>`).join('')}</div><button class="btn pri" data-a="newExp">+ Expense</button></div>
-  <div class="kpis" style="margin-bottom:12px"><div class="kpi"><div class="lbl">Spent this month</div><div class="v">${aed(a.expNet+a.expVat)}</div></div><div class="kpi"><div class="lbl">VAT you can reclaim</div><div class="v">${fmt(a.expVat)}</div><div class="d">on bills with a valid tax invoice</div></div><div class="kpi"><div class="lbl">Paid from drawer</div><div class="v">${fmt(a.cashExp)}</div></div></div>
+  <div class="kpis" style="margin-bottom:12px"><div class="kpi"><div class="lbl">Spent this month</div><div class="v">${aed(a.expNet+a.expVat)}</div></div><div class="kpi" ${vatReg()?'':'hidden'}><div class="lbl">VAT you can reclaim</div><div class="v">${fmt(a.expVat)}</div><div class="d">on bills with a valid tax invoice</div></div><div class="kpi"><div class="lbl">Paid from drawer</div><div class="v">${fmt(a.cashExp)}</div></div></div>
   <div class="grid2"><div class="panel tbl-wrap" style="padding:4px 8px">${list.length?`<table><thead><tr><th>Date</th><th>Category</th><th>Note</th><th class="r">Amount</th><th></th></tr></thead><tbody>${list.map(e=>`<tr><td class="num">${new Date(e.ts).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</td><td>${esc(e.cat)}${e.drawer?' <span class="pill p-mute">drawer</span>':''}</td><td class="small">${esc(e.note||'')}</td><td class="r">${fmt(e.amt)}</td><td><button class="btn sm ghost" data-a="delExp" data-id="${e.id}" data-doc="${e._doc}" aria-label="Remove">✕</button></td></tr>`).join('')}</tbody></table>`:'<div class="empty" style="margin:10px"><b>No expenses this month</b>Record rent, DEWA, gas cylinders, salaries and supplier bills here.</div>'}</div>
   <div class="panel"><h2>By category</h2><div style="margin-top:10px">${cats.length?hbars(cats):'<p class="muted">Nothing yet.</p>'}</div></div></div>`};
 function expForm(){openModal(`<div class="dlg-h"><h2>New expense</h2><button class="btn ghost" data-close>Cancel</button></div>
@@ -1516,7 +1519,7 @@ function countDenoms(){let t=0;document.querySelectorAll('[data-den]').forEach(i
 document.addEventListener('change',e=>{if(e.target.id==='clDay'){UI.closeDay=e.target.value===today()?'':e.target.value;paint()}});
 document.addEventListener('input',e=>{if(e.target.dataset&&e.target.dataset.den!=null){const t=countDenoms();const ex=drawerExpected(closeKey()).expected;$('#cnt').textContent=aed(t);const d=r2(t-ex);const el=$('#dif');el.textContent=(d>0?'+':'')+fmt(d);el.style.color=Math.abs(d)<1?'var(--ok)':'var(--bad)'}
   const k=e.target.dataset&&e.target.dataset.in;if(k){UI[k]=e.target.value;const pos=e.target.selectionStart;const id=e.target.id;paint();const n=document.getElementById(id);if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}});
-function zText(k){const a=agg(ordersOn(k),[]);const e=drawerExpected(k);const cl=S.closes[k]||{};return [`${S.settings.name}`,`Z REPORT  ${dstr(k)}`,S.settings.trn?'TRN '+S.settings.trn:'','',`Bills: ${a.n}`,`Gross sales: ${fmt(a.gross)}`,`Discounts: ${fmt(a.disc)}`,`Net excl. VAT: ${fmt(a.net)}`,`VAT ${S.settings.vat}%: ${fmt(a.vat)}`,''].concat(Object.entries(a.pay).map(([p,v])=>`${PAYN[p]}: ${fmt(v)}`)).concat(['',`Voids: ${a.voids} (${fmt(a.voidAmt)})`,...Object.values(cl.hand||{}).map(x=>(x.kind||'hand')==='hand'?`Cash from ${x.rider}: ${fmt(x.got)}${Math.abs(x.diff)>=0.005?' ('+(x.diff<0?'short ':'extra ')+fmt(Math.abs(x.diff))+')':''}`:`${x.rider} ${(RSK[x.kind]||x.kind).toLowerCase()}: ${fmt(x.got)}`),`Expected cash: ${fmt(e.expected)}`,`Counted cash: ${cl.counted!=null?fmt(cl.counted):'-'}`,`Difference: ${cl.diff!=null?fmt(cl.diff):'-'}`,cl.note?'Note: '+cl.note:'']).join('\n')}
+function zText(k){const a=agg(ordersOn(k),[]);const e=drawerExpected(k);const cl=S.closes[k]||{};return [`${S.settings.name}`,`Z REPORT  ${dstr(k)}`,S.settings.trn&&vatReg()?'TRN '+S.settings.trn:'','',`Bills: ${a.n}`,`Gross sales: ${fmt(a.gross)}`,`Discounts: ${fmt(a.disc)}`,`Net excl. VAT: ${fmt(a.net)}`,`VAT ${S.settings.vat}%: ${fmt(a.vat)}`,''].concat(Object.entries(a.pay).map(([p,v])=>`${PAYN[p]}: ${fmt(v)}`)).concat(['',`Voids: ${a.voids} (${fmt(a.voidAmt)})`,...Object.values(cl.hand||{}).map(x=>(x.kind||'hand')==='hand'?`Cash from ${x.rider}: ${fmt(x.got)}${Math.abs(x.diff)>=0.005?' ('+(x.diff<0?'short ':'extra ')+fmt(Math.abs(x.diff))+')':''}`:`${x.rider} ${(RSK[x.kind]||x.kind).toLowerCase()}: ${fmt(x.got)}`),`Expected cash: ${fmt(e.expected)}`,`Counted cash: ${cl.counted!=null?fmt(cl.counted):'-'}`,`Difference: ${cl.diff!=null?fmt(cl.diff):'-'}`,cl.note?'Note: '+cl.note:'']).join('\n')}
 
 /* ---------- REPORTS ---------- */
 let repCache={key:'',d:null};
@@ -1544,7 +1547,7 @@ function reportText(d,W){W=W||60;const SH={'Raw material purchases (incl. VAT)':
    `Printed ${new Date().toLocaleString('en-GB')}`];
   return L.join('\n')}
 function daySummary(k){const a=agg(ordersOn(k),Object.values(S.exp).filter(e=>e.date===k),Object.values(S.pur).filter(p=>p.date===k),Object.values(S.mov).filter(m=>m.date===k));const e=drawerExpected(k);const cl=S.closes[k]||{};const top=Object.values(a.items).sort((x,y)=>y.q-x.q).slice(0,5);
-  return [`*${S.settings.name}* — ${dstr(k)}`,`Sales: AED ${fmt(a.gross)} (${a.n} bills, avg ${fmt(a.avg)})`].concat(Object.entries(a.pay).map(([p,v])=>`• ${PAYN[p]}: ${fmt(v)}`)).concat([`VAT collected: ${fmt(a.vat)}`,`Expenses: ${fmt(a.expNet+a.expVat)} · Purchases: ${fmt(a.purch)}`,a.waste?`Wastage: ${fmt(a.waste)}`:'',`Cash in drawer should be: ${fmt(e.expected)}`+(cl.counted!=null?` · counted ${fmt(cl.counted)} (${cl.diff>=0?'+':''}${fmt(cl.diff)})`:''),top.length?`Best sellers: ${top.map(i=>i.n+' '+fmt0(i.q)).join(', ')}`:'']).filter(Boolean).join('\n')}
+  return [`*${S.settings.name}* — ${dstr(k)}`,`Sales: AED ${fmt(a.gross)} (${a.n} bills, avg ${fmt(a.avg)})`].concat(Object.entries(a.pay).map(([p,v])=>`• ${PAYN[p]}: ${fmt(v)}`)).concat([vatReg()?`VAT collected: ${fmt(a.vat)}`:'',`Expenses: ${fmt(a.expNet+a.expVat)} · Purchases: ${fmt(a.purch)}`,a.waste?`Wastage: ${fmt(a.waste)}`:'',`Cash in drawer should be: ${fmt(e.expected)}`+(cl.counted!=null?` · counted ${fmt(cl.counted)} (${cl.diff>=0?'+':''}${fmt(cl.diff)})`:''),top.length?`Best sellers: ${top.map(i=>i.n+' '+fmt0(i.q)).join(', ')}`:'']).filter(Boolean).join('\n')}
 RENDER.reports=function(){
   const ranges=[['today','Today'],['yday','Yesterday'],['7d','7 days'],['month','This month'],['last','Last month'],['custom','Custom']];
   const head=`<div class="topbar"><h1>Reports</h1><div class="row">${ranges.map(([k,l])=>`<button class="chip ${UI.rRange===k?'on':''}" data-a="rRange" data-v="${k}">${l}</button>`).join('')}</div></div>
@@ -1554,7 +1557,7 @@ RENDER.reports=function(){
   const days=[];for(let k=d.f;k<=d.t;k=addDays(k,1)){days.push(k);if(days.length>62)break}
   const plat={};(S.settings.platforms||[]).forEach(p=>plat[p.id]=p.name);plat.own='Own delivery';
   const gp=a.net-a.cogs;const vatNet=a.vat-a.expVat-a.purVat;
-  const shortTxt=`*${S.settings.name}* report ${dstr(d.f)}${d.f!==d.t?' to '+dstr(d.t):''}\nSales AED ${fmt(a.gross)} (${a.n} bills)\nNet profit AED ${fmt(a.profit)}\nVAT ${vatNet>=0?'payable':'refundable'} AED ${fmt(Math.abs(vatNet))}\nPurchases AED ${fmt(a.purch)} · Wastage AED ${fmt(a.waste)}`;
+  const shortTxt=`*${S.settings.name}* report ${dstr(d.f)}${d.f!==d.t?' to '+dstr(d.t):''}\nSales AED ${fmt(a.gross)} (${a.n} bills)\nNet profit AED ${fmt(a.profit)}${vatReg()?`\nVAT ${vatNet>=0?'payable':'refundable'} AED ${fmt(Math.abs(vatNet))}`:''}\nPurchases AED ${fmt(a.purch)} · Wastage AED ${fmt(a.waste)}`;
   return head+`<div class="stack"><div class="row"><button class="btn pri" data-a="printRep">Print report</button><a class="btn grn" target="_blank" rel="noopener" href="${ownerWa(shortTxt)}">Send summary on WhatsApp</a></div>
   <div class="kpis">
    <div class="kpi"><div class="lbl">Gross sales</div><div class="v">${aed(a.gross)}</div><div class="d">${a.n} bills · avg ${fmt(a.avg)}</div></div>
@@ -1568,9 +1571,9 @@ RENDER.reports=function(){
    <div class="panel"><h2>Sales by hour</h2><p class="small muted">When the rush comes, AED</p>${barChart(a.hours.slice(5),a.hours.slice(5).map((_,i)=>String(i+5)),{label:'Sales by hour'})}</div>
    <div class="panel"><h2>Profit & loss</h2><div class="stack" style="gap:4px;margin-top:10px">
     <div class="tl"><span>Net sales</span><span>${fmt(a.net)}</span></div><div class="tl"><span>− Ingredient cost (from recipes)</span><span>${fmt(a.cogs)}</span></div><div class="tl"><span>− Wastage & stock shortage</span><span>${fmt(a.waste)}</span></div><div class="tl"><span>− Delivery app commission</span><span>${fmt(a.comm)}</span></div><div class="tl"><span>− Expenses (excl. VAT)</span><span>${fmt(a.expNet)}</span></div><div class="tl total"><span>Net profit</span><span>${aed(a.profit)}</span></div><div class="tl small muted"><span>Raw material purchases (cash out)</span><span>${fmt(a.purch)}</span></div></div></div>
-   <div class="panel"><h2>VAT summary</h2><p class="small muted">For the FTA return (figures to check with your accountant)</p><div class="stack" style="gap:4px;margin-top:6px">
+   ${vatReg()?'':'<!--'}<div class="panel"><h2>VAT summary</h2><p class="small muted">For the FTA return (figures to check with your accountant)</p><div class="stack" style="gap:4px;margin-top:6px">
     <div class="tl"><span>Standard-rated sales (excl. VAT)</span><span>${fmt(a.net)}</span></div><div class="tl"><span>Output VAT collected</span><span>${fmt(a.vat)}</span></div><div class="tl"><span>Input VAT on purchases</span><span>${fmt(a.purVat)}</span></div><div class="tl"><span>Input VAT on expenses</span><span>${fmt(a.expVat)}</span></div><div class="tl total"><span>${vatNet>=0?'VAT payable':'VAT refundable'}</span><span>${aed(Math.abs(vatNet))}</span></div></div></div>
-   <div class="panel"><h2>Payments & channels</h2><div style="margin-top:10px">${a.n?hbars(Object.entries(a.pay).map(([k,v])=>[PAYN[k]||k,v])):'<p class="muted">No sales in this period.</p>'}</div>${Object.keys(a.plats).length?`<h3 style="margin-top:12px">Delivery apps</h3><div style="margin-top:6px">${hbars(Object.entries(a.plats).map(([k,v])=>[plat[k]||k,v]))}</div>`:''}</div>
+${vatReg()?'':'-->'}   <div class="panel"><h2>Payments & channels</h2><div style="margin-top:10px">${a.n?hbars(Object.entries(a.pay).map(([k,v])=>[PAYN[k]||k,v])):'<p class="muted">No sales in this period.</p>'}</div>${Object.keys(a.plats).length?`<h3 style="margin-top:12px">Delivery apps</h3><div style="margin-top:6px">${hbars(Object.entries(a.plats).map(([k,v])=>[plat[k]||k,v]))}</div>`:''}</div>
    <div class="panel"><h2>Sales by staff</h2><div style="margin-top:10px">${Object.keys(a.by).length?hbars(Object.entries(a.by).map(([k,v])=>[staffName(k),v])):'<p class="muted">No sales.</p>'}</div></div>
    ${(()=>{const rs=Object.entries(riderStats(d.orders)).sort((x,y)=>y[1].n-x[1].n);return `<div class="panel"><h2>Deliveries by person</h2>${rs.length?`<div class="tbl-wrap"><table><thead><tr><th>Name</th><th class="r">Deliveries</th><th class="r">Sales</th><th class="r">Cash</th><th class="r">Card</th><th class="r">Avg time</th></tr></thead><tbody>${rs.map(([n,x])=>`<tr><td><b>${esc(n)}</b></td><td class="r">${x.n}</td><td class="r">${fmt(x.amt)}</td><td class="r">${fmt(x.cash)}</td><td class="r">${fmt(x.card)}</td><td class="r">${x.mc?(x.mins/x.mc<1?'under 1 min':Math.round(x.mins/x.mc)+' min'):'—'}</td></tr>`).join('')}</tbody></table></div><p class="small muted" style="margin:6px 0 0">Avg time is from <i>Out for delivery</i> to <i>Delivered</i>.</p>`:'<p class="muted">No deliveries in this period.</p>'}</div>`})()}
   </div>
@@ -1608,6 +1611,7 @@ RENDER.setup=function(){const s=S.settings;
    <label class="field"><span class="lbl">Phone</span><input id="st_phone" value="${esc(s.phone)}"></label>
    <label class="field"><span class="lbl">TRN (15 digits)</span><input id="st_trn" inputmode="numeric" maxlength="15" value="${esc(s.trn)}" placeholder="100xxxxxxxxxxx3"></label>
    <label class="field"><span class="lbl">VAT rate %</span><input id="st_vat" type="number" step="0.5" value="${esc(s.vat)}"></label>
+   <label class="row small" style="grid-column:1/-1"><input type="checkbox" id="st_vreg" ${vatReg()?'checked':''}> <span><b>Registered for VAT</b> (we have a TRN from the FTA). Untick if not registered: bills then charge no VAT and print as <i>Receipt</i>, not <i>Tax invoice</i>.</span></label>
    <label class="field"><span class="lbl">Receipt footer</span><input id="st_footer" value="${esc(s.footer)}"></label>
    <label class="field"><span class="lbl">Trade licence expiry</span><input id="st_lic" type="date" value="${esc(s.licenseExp)}"></label>
    <label class="field"><span class="lbl">Dine-in tables</span><input id="st_tables" type="number" min="0" max="60" value="${esc(s.tables)}"></label>
@@ -1742,7 +1746,7 @@ document.addEventListener('submit',async e=>{const f=e.target.dataset.f;if(!f)re
   if(f==='unlock'){if($('#pinIn').value===String(S.settings.managerPin)){ssSet('wk_mgr','1');paint()}else{toast('Wrong PIN');$('#pinIn').value=''}}
   if(f==='settings'){const g=id=>document.getElementById(id).value;const pl=(S.settings.platforms||[]).map((p,i)=>({id:p.id,name:document.querySelector(`[data-pn="${i}"]`).value.trim()||p.name,comm:+document.querySelector(`[data-pc="${i}"]`).value||0}));
     const s={name:g('st_name').trim(),ownerWa:g('st_owa').trim(),cover:+g('st_cover')||7,addr:g('st_addr').trim(),phone:g('st_phone').trim(),trn:g('st_trn').trim(),vat:+g('st_vat')||0,footer:g('st_footer'),licenseExp:g('st_lic'),tables:+g('st_tables')||0,stampEvery:+g('st_stamp')||0,managerPin:g('st_pin').trim(),
-      inclusive:document.getElementById('st_incl').checked,paper:document.getElementById('st_paper').value,webOn:document.getElementById('st_won').checked,webOpen:g('st_wopen'),webClose:g('st_wclose'),webFee:+g('st_wfee')||0,webMin:+g('st_wmin')||0,webMax:+g('st_wmax')||300,webArea:g('st_warea').trim(),docPaper:document.getElementById('st_docp').value,autoPrint:document.getElementById('st_ap').checked,mods:g('st_mods').split(',').map(x=>x.trim()).filter(Boolean),expCats:g('st_exp').split(',').map(x=>x.trim()).filter(Boolean),platforms:pl};
+      inclusive:document.getElementById('st_incl').checked,vatReg:document.getElementById('st_vreg').checked,paper:document.getElementById('st_paper').value,webOn:document.getElementById('st_won').checked,webOpen:g('st_wopen'),webClose:g('st_wclose'),webFee:+g('st_wfee')||0,webMin:+g('st_wmin')||0,webMax:+g('st_wmax')||300,webArea:g('st_warea').trim(),docPaper:document.getElementById('st_docp').value,autoPrint:document.getElementById('st_ap').checked,mods:g('st_mods').split(',').map(x=>x.trim()).filter(Boolean),expCats:g('st_exp').split(',').map(x=>x.trim()).filter(Boolean),platforms:pl};
     if(s.trn&&!/^\d{15}$/.test(s.trn)){toast('A UAE TRN has 15 digits.');return}
     try{await setDoc('cfg/settings',Object.assign({},S.settings,s));if(s.managerPin)ssSet('wk_mgr','1');document.activeElement.blur();toast('Settings saved')}catch(x){fail(x)}}});
 document.addEventListener('change',e=>{const ru=e.target.dataset&&e.target.dataset.role;if(ru){const v=e.target.value;FS.doc('users/'+ru).set(v==='delivery'?{role:'staff',duty:'delivery'}:{role:v,duty:''},{merge:true}).then(()=>toast('Role updated'),x=>toast('Only the owner can change roles.'));return}

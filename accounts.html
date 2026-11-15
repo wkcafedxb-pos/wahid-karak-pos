@@ -323,6 +323,18 @@ function ageing(a,to,sign){const by={};for(const e of entries()){if(e.date>to)br
     const tot=r2(bk.reduce((s,v)=>s+v,0)-credit);if(Math.abs(tot)>0.004)out.push({p,bk:bk.map(r2),adv:r2(credit),tot})}
   return out.sort((x,y)=>y.tot-x.tot)}
 function isLocked(k){return !!A.set.lock&&k<=A.set.lock}
+/* VAT registration: until registered there is no output VAT and no input VAT recovery; VAT paid on bills is part of the cost */
+const vatRegd=()=>A.set.vatReg!==undefined?!!A.set.vatReg:!!A.set.trn;
+const vatOn=k=>vatRegd()&&(!A.set.vatFrom||k>=A.set.vatFrom);
+function foldVat(lines){const iv=r2(lines.filter(l=>l.a==='1300'&&l.vb!=='R').reduce((s,l)=>s+(+l.dr||0)-(+l.cr||0),0));
+  const keep=lines.filter(l=>l.a!=='1300'&&!(l.a==='2100'&&l.vb==='R')).map(l=>Object.assign({},l,{tagged:l.vb==='P'||l.vb==='R',vb:l.vb==='P'||l.vb==='R'?'':l.vb}));
+  if(Math.abs(iv)>0.004){const t=keep.find(l=>l.tagged&&+l.dr>0)||keep.filter(l=>+l.dr>0&&!acct(l.a).money).sort((a,b)=>b.dr-a.dr)[0];
+    if(t)t.dr=r2(+t.dr+iv);else keep.push({a:'6900',dr:iv>0?iv:0,cr:iv<0?-iv:0})}
+  return keep.map(l=>{delete l.tagged;return l})}
+const VAT_REG={must:375000,vol:187500};
+function vatTest(asOf){const from=addDays(asOf,-364);const p=plData(from,asOf);const t=r2(p.rev+p.oinc);const per=daysBetween(from<A.set.start?A.set.start:from,asOf)+1;
+  const d90=plData(addDays(asOf,-89)<A.set.start?A.set.start:addDays(asOf,-89),asOf);const n90=Math.min(90,daysBetween(A.set.start,asOf)+1);const next30=n90>0?r2((d90.rev+d90.oinc)/n90*30):0;
+  return{from,total:t,days:per,next30,pct:t/VAT_REG.must}}
 function checkLines(lines){const dr=r2(lines.reduce((s,l)=>s+(+l.dr||0),0)),cr=r2(lines.reduce((s,l)=>s+(+l.cr||0),0));return{dr,cr,ok:Math.abs(dr-cr)<0.005&&dr>0}}
 function nextNo(k,prefix){const y=k.slice(0,4);let m=0;manualEntries(true).forEach(e=>{const x=String(e.no||'');if(x.startsWith(prefix+'-'+y+'-')){const n=+x.split('-').pop();if(n>m)m=n}});return `${prefix}-${y}-${String(m+1).padStart(4,'0')}`}
 const SRC_N={pos:'POS day',man:'Journal',ob:'Opening balances',out:'Payment / bill',in:'Money in',xfer:'Transfer',card:'Card settlement',plat:'Platform payout',dep:'Depreciation',fa:'Asset',disp:'Asset disposal',pay:'Payroll',payp:'Salary payment',eosb:'Gratuity provision',vat:'VAT return',vatp:'VAT payment',ct:'Corporate tax',supp:'Supplier payment',custr:'Customer receipt'};
@@ -331,6 +343,7 @@ async function saveEntry(e){if(!canWrite())throw{code:'permission-denied'};
   e.lines=e.lines.map(l=>{const o={a:l.a,dr:r2(l.dr),cr:r2(l.cr)};if(l.p)o.p=l.p;if(l.vb)o.vb=l.vb;if(l.d)o.d=String(l.d).slice(0,120);return o}).filter(l=>l.dr||l.cr);
   const c=checkLines(e.lines);if(!c.ok)throw{message:`Debits ${fmt(c.dr)} and credits ${fmt(c.cr)} must be equal and more than zero.`};
   if(isLocked(e.date))throw{message:`${dstr(e.date)} is in a locked period (locked up to ${dstr(A.set.lock)}).`};
+  if(!vatOn(e.date)&&!['vat','vatp'].includes(e.src)&&e.lines.some(l=>l.a==='1300'||l.vb==='P'||l.vb==='R'))e.lines=foldVat(e.lines);
   const isNew=!e.id;if(isNew){e.id=uid('j');e.ts=Date.now();e.by=who();e.no=e.no||nextNo(e.date,SRC_PREFIX[e.src]||'JV')}
   else{const old=A.jm[e.id];if(old&&old.date.slice(0,7)!==e.date.slice(0,7)){await DB.doc('accj/'+old.date.slice(0,7)).mergeSet({o:{[e.id]:{void:true,moved:e.date,voidTs:Date.now(),voidBy:who(),voidWhy:'Moved to '+e.date}}})}
     e.hist=Object.assign({},(old&&old.hist)||{},{[uid('h')]:{ts:Date.now(),by:who(),what:'Edited'}});e.ets=Date.now()}
@@ -356,11 +369,12 @@ function buildPosDay(d,R){
   for(const id in R.cust){const c=R.cust[id];for(const tid in (c.tx||{})){const t=c.tx[tid];const td=t.date||dkey(t.ts||0);if(td!==d)continue;const amt=+t.amt||0;
     if(t.t==='pay'){add(({cash:'1000',card:'1020',transfer:'1010'})[t.method]||'1000',amt);add('1100',-amt,'c:'+id)}
     else if(t.t==='adj'&&!String(t.ref||'').startsWith('Void')){add('1100',amt,'c:'+id);add(amt>=0?'4900':'6930',-amt)}}}
-  for(const e of R.exps){if(e.del||e.date!==d)continue;const amt=+e.amt||0;const v=e.vat?r2(amt*rate/(100+rate)):0;const a=expAcct(e.cat);
+  const von=vatOn(d);
+  for(const e of R.exps){if(e.del||e.date!==d)continue;const amt=+e.amt||0;const v=e.vat&&von?r2(amt*rate/(100+rate)):0;const a=expAcct(e.cat);
     add(a,amt-v,'',v?'P':'');if(v)add('1300',v,'','P');add(e.drawer?'1000':(A.set.nonDrawer||'1010'),-amt);
     docs.push({k:'exp',cat:e.cat,note:e.note||'',net:r2(amt-v),vat:v,acct:a,drawer:!!e.drawer})}
   for(const p of R.purs){if(p.del)continue;const sup='s:'+(p.sup||'');
-    if(p.date===d){add('1200',+p.sub||0,'',+p.vat?'P':'');if(+p.vat)add('1300',+p.vat,'','P');add('2000',-(+p.total||0),sup);
+    if(p.date===d){if(von){add('1200',+p.sub||0,'',+p.vat?'P':'');if(+p.vat)add('1300',+p.vat,'','P')}else add('1200',+p.total||0);add('2000',-(+p.total||0),sup);
       const s=A.sup[p.sup]||{};docs.push({k:'pur',sup:s.name||p.sup,trn:s.trn||'',inv:p.inv||'',net:r2(+p.sub||0),vat:r2(+p.vat||0)})}
     if(p.paid&&p.payDate===d){add('2000',+p.total||0,sup);const k=p.method==='cash'?(p.drawer?'cash':'cashout'):(p.method||'cash');add(PM_ACCT[k]||'1010',-(+p.total||0))}}
   for(const m of R.movs){if(m.del||m.date!==d)continue;const v=+m.val||0;if(m.t==='waste'){add('5020',v);add('1200',-v)}else if(m.t==='count'){add('1200',v);add('5020',-v)}}
@@ -440,13 +454,14 @@ function setupHtml(){return `<div class="panel" style="max-width:640px;margin:4v
   <label class="field"><span class="lbl">Books start on</span><input id="su_start" type="date" required value="${esc(firstOfMonth())}"><span class="small muted">POS days from this date are posted into the books. Usually the first day of the month you start, or the start of your financial year.</span></label>
   <div class="fgrid"><label class="field"><span class="lbl">Financial year starts in</span><select id="su_fy">${MONTHS.map((m,i)=>`<option value="${i+1}" ${i===0?'selected':''}>${m}</option>`).join('')}</select></label>
   <label class="field"><span class="lbl">VAT returns</span><select id="su_vat"><option value="q1">Quarterly: Jan–Mar, Apr–Jun…</option><option value="q2">Quarterly: Feb–Apr, May–Jul…</option><option value="q3">Quarterly: Mar–May, Jun–Aug…</option><option value="m">Monthly</option></select><span class="small muted">Check your VAT certificate in EmaraTax.</span></label></div>
-  <label class="field"><span class="lbl">VAT TRN</span><input id="su_trn" value="${esc(A.posSet.trn||'')}" inputmode="numeric" placeholder="15 digits"></label>
+  <label class="field"><span class="lbl">Registered for VAT?</span><select id="su_reg"><option value="0" ${A.posSet.trn?'':'selected'}>Not registered yet</option><option value="1" ${A.posSet.trn?'selected':''}>Yes, we have a TRN</option></select></label>
+  <label class="field"><span class="lbl">VAT TRN (if registered)</span><input id="su_trn" value="${esc(A.posSet.trn||'')}" inputmode="numeric" placeholder="15 digits"></label>
   <button class="btn pri">Start the books</button></form>`:`<p>The owner needs to open Accounts once to choose the start date and VAT period.</p>`}</div>`}
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const firstOfMonth=()=>today().slice(0,8)+'01';
 document.addEventListener('submit',async e=>{const f=e.target.dataset.f;if(!f)return;e.preventDefault();
   if(f==='login'){try{await firebase.auth().signInWithEmailAndPassword($('#lgE').value.trim(),$('#lgP').value)}catch(x){toast(x.code==='auth/invalid-credential'||x.code==='auth/wrong-password'?'Email or password is not right.':(x.message||'Could not sign in'))}}
-  if(f==='setup'){const v=$('#su_vat').value;const s={start:$('#su_start').value,fyStart:+$('#su_fy').value,vatFreq:v==='m'?'m':'q',vatStart:v==='m'?1:+v.slice(1),trn:$('#su_trn').value.trim()};
+  if(f==='setup'){const v=$('#su_vat').value;const s={start:$('#su_start').value,fyStart:+$('#su_fy').value,vatFreq:v==='m'?'m':'q',vatStart:v==='m'?1:+v.slice(1),trn:$('#su_trn').value.trim(),vatReg:$('#su_reg').value==='1'};
     try{await DB.doc('acc/set').mergeSet(s);Object.assign(A.set,s);bump();toast('Books started. Reading the POS…');paint();syncPos(s.start,today())}catch(x){fail(x)}}});
 
 /* ---------- alerts and deadlines ---------- */
@@ -454,7 +469,10 @@ function alerts(){return cached('alerts',()=>{const out=[];const t=today();if(!A
   const tb=balances('',t);const sum=Object.values(tb).reduce((s,x)=>s+x.close,0);
   if(Math.abs(sum)>0.05)out.push({lvl:'bad',m:`The ledger is out of balance by ${aed(sum)}. Open the Trial balance.`,go:'reports'});
   A.sync.changedLocked.forEach(d=>out.push({lvl:'bad',m:`POS data for ${dstr(d)} changed after the books were locked. Unlock the period or post a correction.`,go:'pos'}));
-  const vp=vatPeriods(3).slice(1).filter(p=>p.to>=A.set.start&&!A.vat[p.key]);vp.forEach(p=>{const due=vatDue(p);const dl=daysBetween(t,due);out.push({lvl:dl<0?'bad':dl<=10?'warn':'info',m:`VAT return ${vatLabel(p)} not marked as filed. Due ${dstr(due)}${dl<0?` (${-dl} days late)`:` (${dl} days left)`}.`,go:'vat'})});
+  if(!vatRegd()){const vt=vatTest(t);if(vt.total>VAT_REG.must)out.push({lvl:'bad',m:`Taxable sales in the last 12 months are ${aed(vt.total)}, over the AED 375,000 VAT threshold. Apply for VAT registration on EmaraTax within 30 days of crossing it (late registration: AED 10,000 penalty).`,go:'vat'});
+    else if(vt.total>VAT_REG.must*0.8)out.push({lvl:'warn',m:`Taxable sales in the last 12 months are ${aed(vt.total)}, ${Math.round(vt.pct*100)}% of the AED 375,000 VAT threshold.`,go:'vat'});
+    const vc=Object.values(A.pos).filter(p=>p.date>=t.slice(0,8)+'01'&&(p.vat||0)>0).reduce((s,p)=>s+p.vat,0);if(vc>0.004)out.push({lvl:'bad',m:`POS bills this month show VAT of ${aed(vc)} although the cafe is not VAT registered. In the POS go to Settings and untick Registered for VAT. Ask your accountant about VAT already charged.`,go:'vat'})}
+  const vp=!vatRegd()?[]:vatPeriods(3).slice(1).filter(p=>p.to>=A.set.start&&p.to>=(A.set.vatFrom||'')&&!A.vat[p.key]);vp.forEach(p=>{const due=vatDue(p);const dl=daysBetween(t,due);out.push({lvl:dl<0?'bad':dl<=10?'warn':'info',m:`VAT return ${vatLabel(p)} not marked as filed. Due ${dstr(due)}${dl<0?` (${-dl} days late)`:` (${dl} days left)`}.`,go:'vat'})});
   const cash=balAt('1000',t);if(cash<-0.01)out.push({lvl:'bad',m:`Cash in drawer shows ${aed(cash)}. Post the opening float in Opening balances.`,go:'tx'});
   const unclosed=Object.values(A.pos).filter(p=>!p.closed&&p.date<addDays(t,-1)).length;if(unclosed)out.push({lvl:'warn',m:`${unclosed} POS day${unclosed>1?'s were':' was'} not closed in the till, so cash over/short is missing.`,go:'pos'});
   const depDue=depMonthsDue();if(depDue.length)out.push({lvl:'warn',m:`Depreciation not posted for ${depDue.map(mname).join(', ')}.`,go:'assets'});
@@ -464,7 +482,7 @@ function alerts(){return cached('alerts',()=>{const out=[];const t=today();if(!A
   if(!A.set.lock||daysBetween(A.set.lock,t)>75)out.push({lvl:'info',m:'Lock finished periods (after filing VAT) so nobody can change them by mistake.',go:'settings'});
   return out})}
 function deadlines(){const t=today();const out=[];
-  vatPeriods(4).forEach(p=>{if(p.to<A.set.start)return;const due=vatDue(p);const f=A.vat[p.key];out.push({d:due,m:`VAT return ${vatLabel(p)}`,st:f?'Filed':p.to>=t?'Period open':'To file'})});
+  if(vatRegd())vatPeriods(4).forEach(p=>{if(p.to<A.set.start||p.to<(A.set.vatFrom||''))return;const due=vatDue(p);const f=A.vat[p.key];out.push({d:due,m:`VAT return ${vatLabel(p)}`,st:f?'Filed':p.to>=t?'Period open':'To file'})});
   const fy=fyOf(t),pfy=fyOf(addDays(fy.from,-1));[pfy,fy].filter(f=>f.to>=A.set.start).forEach(f=>{const due=addDays(addMonths(addDays(f.to,1),9),-1);out.push({d:due,m:`Corporate Tax return and payment, FY ${f.label}`,st:(A.ct[f.from]||{}).filed?'Filed':f.to>=t?'Year open':'To file'})});
   out.push({d:'2027-03-31',m:'E-invoicing: appoint an Accredited Service Provider (businesses under AED 50 million)',st:'Upcoming'});
   out.push({d:'2027-07-01',m:'E-invoicing goes live for businesses under AED 50 million',st:'Upcoming'});
@@ -520,7 +538,7 @@ RENDER.dash=function(){const t=today();const m=plData(firstOfMonth(),t);const fy
    <div class="kpi"><div class="lbl">Cash and bank</div><div class="v">${fmt(cash)}</div><div class="d">till, bank, petty, with riders</div></div>
    <div class="kpi"><div class="lbl">To collect</div><div class="v">${fmt(ar)}</div><div class="d">khata, platforms, card</div></div>
    <div class="kpi"><div class="lbl">To pay suppliers</div><div class="v">${fmt(ap)}</div><div class="d">trade payables</div></div>
-   <div class="kpi"><div class="lbl">VAT so far · ${esc(vatLabel(vp))}</div><div class="v">${fmt(Math.abs(vr.b14))}</div><div class="d">${vr.b14<0?'refundable':'to pay'} · due ${dstr(vatDue(vp))}</div></div>
+   ${vatRegd()?`<div class="kpi"><div class="lbl">VAT so far · ${esc(vatLabel(vp))}</div><div class="v">${fmt(Math.abs(vr.b14))}</div><div class="d">${vr.b14<0?'refundable':'to pay'} · due ${dstr(vatDue(vp))}</div></div>`:(()=>{const vt=vatTest(t);return `<div class="kpi" data-a="go" data-v="vat" style="cursor:pointer"><div class="lbl">VAT threshold · 12 months</div><div class="v">${fmt(vt.total)}</div><div class="d">${Math.round(vt.pct*100)}% of AED 375,000 · not registered</div><div style="height:5px;background:var(--surface-2);border-radius:3px;margin-top:6px"><div style="height:5px;width:${Math.min(100,vt.pct*100)}%;background:${vt.pct>=1?'var(--bad)':vt.pct>=.8?'var(--warn)':'var(--ok)'};border-radius:3px"></div></div></div>`})()}
   </div>
   <div class="grid2"><div class="panel"><h2>Last 12 months</h2>${barChart(mo)}<div class="row small muted" style="margin-top:6px"><span><span class="statusdot" style="background:var(--plum)"></span>Sales</span><span><span class="statusdot" style="background:var(--gold)"></span>Costs</span><span><span class="statusdot" style="background:var(--ok)"></span>Profit</span></div></div>
    <div class="panel"><h2>Deadlines</h2>${dl.map(x=>{const d=daysBetween(t,x.d);return `<div class="deadline"><div><b>${esc(x.m)}</b><div class="small muted">${dstr(x.d)}${x.st?' · '+esc(x.st):''}</div></div><span class="pill ${x.st==='Filed'?'p-ok':d<0?'p-bad':d<=14?'p-warn':'p-mute'}">${x.st==='Filed'?'Done':d<0?-d+' days late':d+' days'}</span></div>`}).join('')}</div></div>
@@ -702,7 +720,21 @@ function vatReturn(from,to){const b={};const add=(k,amt,vat)=>{const x=b[k]||(b[
 const VAT_BOXES=[['1a','Standard rated supplies in Abu Dhabi'],['1b','Standard rated supplies in Dubai'],['1c','Standard rated supplies in Sharjah'],['1d','Standard rated supplies in Ajman'],['1e','Standard rated supplies in Umm Al Quwain'],['1f','Standard rated supplies in Ras Al Khaimah'],['1g','Standard rated supplies in Fujairah'],
  ['2','Tax refunds provided to tourists'],['3','Supplies subject to the reverse charge provisions'],['4','Zero rated supplies'],['5','Exempt supplies'],['6','Goods imported into the UAE'],['7','Adjustments to goods imported into the UAE']];
 function curVatP(){const ps=vatPeriods(10).filter(p=>p.to>=A.set.start);return ps.find(p=>p.key===UI.vatP)||ps[1]||ps[0]}
-RENDER.vat=function(){const ps=vatPeriods(10).filter(p=>p.to>=A.set.start);const p=curVatP();const v=vatReturn(p.from,p.to);const f=A.vat[p.key];const t=today();const due=vatDue(p);
+function vatTracker(){const t=today();const vt=vatTest(t);const mo=[];let m=addMonths(firstOfMonth(),-11);for(let i=0;i<12;i++){const p=plData(m,monthEnd(m));mo.push({m,v:r2(p.rev+p.oinc)});m=addMonths(m,1)}
+  const col=vt.pct>=1?'var(--bad)':vt.pct>=.8?'var(--warn)':'var(--ok)';
+  return `<div class="topbar"><h1>VAT</h1><span class="pill p-mute">Not registered</span></div>
+  <div class="grid2"><div class="panel stack"><h2>Registration threshold</h2>
+   <div class="tl total"><span>Taxable sales, last 12 months</span><span>${aed(vt.total)}</span></div>
+   <div style="position:relative;height:14px;background:var(--surface-2);border-radius:7px"><div style="height:14px;width:${Math.min(100,vt.pct*100)}%;background:${col};border-radius:7px"></div><div title="Voluntary AED 187,500" style="position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;background:var(--muted)"></div></div>
+   <div class="row small muted" style="justify-content:space-between"><span>0</span><span>187,500 voluntary</span><span>375,000 must register</span></div>
+   <div class="tl"><span>Expected in the next 30 days</span><span>${fmt(vt.next30)}</span></div>
+   ${vt.days<365?`<p class="small muted" style="margin:0">The books only start on ${dstr(A.set.start)}, so this covers ${vt.days} days. Add sales before that date from your old records when you check the threshold.</p>`:''}
+   <div class="alert ${vt.total>VAT_REG.must?'bad':vt.total>VAT_REG.vol?'warn':'ok'}"><div class="grow">${vt.total>VAT_REG.must?'Over the mandatory threshold. Apply on EmaraTax within 30 days of the day it was crossed. Late registration carries an AED 10,000 penalty.':vt.total>VAT_REG.vol?'Over AED 187,500: you may register voluntarily, and must register once 12-month sales pass AED 375,000.':'Below the voluntary threshold. No VAT registration needed yet.'}</div></div>
+   <div class="small"><b>While not registered:</b> the POS must not charge VAT or print "Tax invoice", and VAT paid on supplier bills cannot be reclaimed, so the books treat it as part of the cost.</div>
+   ${canOwner()?'<button class="btn" data-a="go" data-v="settings">We are now registered</button>':''}</div>
+  <div class="panel"><h2>Sales by month</h2><table><tbody>${mo.map(x=>`<tr><td>${mname(x.m)}</td><td class="r">${fmt(x.v)}</td></tr>`).join('')}<tr class="tot"><td>Last 12 months</td><td class="r">${fmt(mo.reduce((s,x)=>s+x.v,0))}</td></tr></tbody></table>
+   <p class="small muted">Taxable supplies are counted without VAT. Sales of the cafe are all standard-rated, so the full turnover counts.</p></div></div>`}
+RENDER.vat=function(){if(!vatRegd())return vatTracker();const ps=vatPeriods(10).filter(p=>p.to>=A.set.start);const p=curVatP();const v=vatReturn(p.from,p.to);const f=A.vat[p.key];const t=today();const due=vatDue(p);
   const changed=f&&f.boxes&&(Math.abs(f.boxes.b12-v.b12)>0.004||Math.abs(f.boxes.b13-v.b13)>0.004);const paid=f&&f.paid;
   const row=(k,l,x,noVat)=>`<tr><td class="num"><b>${k}</b></td><td>${l}</td><td class="r">${fmt(x.amt)}</td><td class="r">${noVat?'':fmt(x.vat)}</td><td class="r muted">0.00</td></tr>`;
   return `<div class="topbar"><h1>VAT</h1><button class="btn" data-a="vatPrint">Print VAT 201 working</button><button class="btn" data-a="vatCsv">VAT audit file (CSV)</button></div>
@@ -863,6 +895,8 @@ RENDER.settings=function(){const s=A.set;const own=canOwner();const dis=own?'':'
   <div class="grid2"><form class="panel stack" data-f="setCo"><h2>Company</h2>
    <label class="field"><span class="lbl">Legal name</span><input id="s_legal" value="${esc(s.legal)}" ${dis}></label><label class="field"><span class="lbl">Address</span><input id="s_addr" value="${esc(s.addr||'')}" ${dis}></label>
    <div class="fgrid"><label class="field"><span class="lbl">Trade licence no.</span><input id="s_lic" value="${esc(s.licence)}" ${dis}></label><label class="field"><span class="lbl">VAT TRN</span><input id="s_trn" value="${esc(s.trn)}" ${dis}></label><label class="field"><span class="lbl">Corporate Tax TRN</span><input id="s_ctrn" value="${esc(s.ctTrn)}" ${dis}></label>
+   <label class="field"><span class="lbl">VAT registration</span><select id="s_vreg" ${dis}><option value="0" ${vatRegd()?'':'selected'}>Not registered</option><option value="1" ${vatRegd()?'selected':''}>Registered</option></select></label>
+   <label class="field"><span class="lbl">Registered from</span><input id="s_vfrom" type="date" value="${esc(s.vatFrom||'')}" ${dis}><span class="small muted">Effective date on the VAT certificate</span></label>
    <label class="field"><span class="lbl">Emirate (VAT box 1)</span><select id="s_em" ${dis}>${Object.keys(EMIRATES).map(k=>`<option ${k===s.emirate?'selected':''}>${k}</option>`).join('')}</select></label>
    <label class="field"><span class="lbl">Financial year starts</span><select id="s_fy" ${dis}>${MONTHS.map((m,i)=>`<option value="${i+1}" ${+s.fyStart===i+1?'selected':''}>${m}</option>`).join('')}</select></label>
    <label class="field"><span class="lbl">VAT period</span><select id="s_vf" ${dis}>${[['q1','Quarterly from Jan'],['q2','Quarterly from Feb'],['q3','Quarterly from Mar'],['m','Monthly']].map(([k,l])=>`<option value="${k}" ${(s.vatFreq==='m'?'m':'q'+s.vatStart)===k?'selected':''}>${l}</option>`).join('')}</select></label></div>
@@ -1072,8 +1106,8 @@ document.addEventListener('change',async e=>{const t=e.target;
   if(t.dataset.setf&&canOwner()){try{await DB.doc('acc/set').mergeSet({[t.dataset.setf]:t.value});toast('Saved')}catch(x){fail(x)}}
   if(t.dataset.ctsbr){try{await DB.doc('acc/ct').mergeSet({[t.dataset.ctsbr]:{sbr:t.checked}})}catch(x){fail(x)}}});
 document.addEventListener('submit',async e=>{if(e.target.dataset.f!=='setCo')return;e.preventDefault();if(!canOwner())return;const v=$('#s_vf').value;
-  const s={legal:$('#s_legal').value.trim(),addr:$('#s_addr').value.trim(),licence:$('#s_lic').value.trim(),trn:$('#s_trn').value.trim(),ctTrn:$('#s_ctrn').value.trim(),emirate:$('#s_em').value,fyStart:+$('#s_fy').value,vatFreq:v==='m'?'m':'q',vatStart:v==='m'?1:+v.slice(1),sbrPrev:$('#s_sbr').checked};
-  if(s.trn&&!/^\d{15}$/.test(s.trn)){toast('A TRN has 15 digits.');return}try{await DB.doc('acc/set').mergeSet(s);toast('Company details saved')}catch(x){fail(x)}});
+  const s={legal:$('#s_legal').value.trim(),addr:$('#s_addr').value.trim(),licence:$('#s_lic').value.trim(),trn:$('#s_trn').value.trim(),ctTrn:$('#s_ctrn').value.trim(),emirate:$('#s_em').value,vatReg:$('#s_vreg').value==='1',vatFrom:$('#s_vfrom').value,fyStart:+$('#s_fy').value,vatFreq:v==='m'?'m':'q',vatStart:v==='m'?1:+v.slice(1),sbrPrev:$('#s_sbr').checked};
+  if(s.trn&&!/^\d{15}$/.test(s.trn)){toast('A TRN has 15 digits.');return}if(s.vatReg&&!s.trn){toast('Add the TRN from the VAT certificate.');return}try{await DB.doc('acc/set').mergeSet(s);toast('Company details saved')}catch(x){fail(x)}});
 
 /* ---------- data ---------- */
 let autoSynced=false;
