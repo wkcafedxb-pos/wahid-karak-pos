@@ -1,6 +1,6 @@
 // Keeps the app opening without internet. Your own files: fresh copy when online, saved copy when offline.
-const CACHE = 'wahid-pos-v2';
-const SHELL = ['./', './index.html', './accounts.html', './order.html', './firebase-config.js', './manifest.webmanifest', './accounts.webmanifest', './icon-192.png', './acc-icon-192.png', './logo-96.png', './logo-240.png'];
+const CACHE = 'wahid-pos-v3';
+const SHELL = ['./', './index.html', './accounts.html', './order.html', './firebase-config.js', './manifest.webmanifest', './accounts.webmanifest', './icon-192.png', './acc-icon-192.png', './logo-96.png', './logo-240.png', './logo-print.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });

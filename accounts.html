@@ -143,7 +143,7 @@ td.ind{padding-left:22px}
   body{background:#fff!important;color:#000}
   #printArea{display:block;font-family:Figtree,Arial,sans-serif;font-size:10pt;line-height:1.35;color:#000}
   #printArea .ph{display:flex;align-items:center;gap:12pt;border-bottom:1.5pt solid #000;padding-bottom:8pt;margin-bottom:10pt}
-  #printArea .ph img{width:54pt;height:54pt}
+  #printArea .ph img{width:auto;height:46pt}
   #printArea .ph .co{font-family:Marcellus,Georgia,serif;font-size:15pt}
   #printArea .ph .tt{margin-left:auto;text-align:right}
   #printArea .ph .tt b{display:block;font-size:12pt;text-transform:uppercase;letter-spacing:.04em}
@@ -520,7 +520,7 @@ function monthly(n){const out=[];let m=addMonths(firstOfMonth(),-(n-1));for(let 
 
 /* ---------- printing ---------- */
 function printReport(title,sub,body,opts){opts=opts||{};const s=A.set;const pa=$('#printArea');
-  pa.innerHTML=`<div class="ph"><img src="logo-240.png" alt=""><div><div class="co">${esc(s.legal)}</div><div>${esc(s.addr||'')}</div><div>${[s.trn?'TRN '+esc(s.trn):'',s.licence?'Licence '+esc(s.licence):''].filter(Boolean).join(' · ')}</div></div><div class="tt"><b>${esc(title)}</b>${esc(sub||'')}<div style="font-size:8pt;color:#555">Printed ${dtstr(Date.now())}</div></div></div>${body}
+  pa.innerHTML=`<div class="ph"><img src="logo-print.png" alt="Wahid Karak Cafe"><div><div class="co">${esc(s.legal)}</div><div>${esc(s.addr||'')}</div><div>${[s.trn?'TRN '+esc(s.trn):'',s.licence?'Licence '+esc(s.licence):''].filter(Boolean).join(' · ')}</div></div><div class="tt"><b>${esc(title)}</b>${esc(sub||'')}<div style="font-size:8pt;color:#555">Printed ${dtstr(Date.now())}</div></div></div>${body}
    <div class="pf"><span>Prepared under IFRS for SMEs · amounts in UAE dirhams (AED)</span><span>${esc(who())}</span></div>${opts.sig?'<div class="sig"><div>Prepared by</div><div>Approved by (owner)</div></div>':''}`;
   $('#pageStyle').textContent=`@page{size:A4 ${opts.land?'landscape':'portrait'};margin:14mm 12mm}`;setTimeout(()=>{try{window.print()}catch(e){toast('Printing is not available here.')}},80)}
 const tblHtml=(head,rows)=>`<table><thead><tr>${head.map(h=>`<th class="${h.r?'r':''}">${esc(h.t||h)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
