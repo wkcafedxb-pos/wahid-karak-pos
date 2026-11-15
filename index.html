@@ -890,10 +890,10 @@ function billsOn(k){if(k>=WIN)return ordersOn(k);if(oldDays[k])return oldDays[k]
 function findBill(c,t){const id=Object.keys(S.orders).find(i=>{const o=S.orders[i];return o.cust===c&&String(o.no)===String(t.ref)&&Math.abs(o.ts-t.ts)<10*60000});return id||null}
 function viewOrder(id){const o=S.orders[id]||OLD[id];if(!o)return;
   openModal(`<div class="dlg-h"><h2>Bill ${esc(o.no)}</h2><button class="btn ghost" data-close>Close</button></div><div class="dlg-b"><div class="receipt">${esc(receiptText(o))}</div>
-   <div class="row"><button class="btn pri" data-k="print">Print</button><button class="btn" data-k="copy">Copy</button><a class="btn grn" target="_blank" rel="noopener" href="${waHref(o.cust&&S.cust[o.cust]&&S.cust[o.cust].phone,receiptText(o))}">WhatsApp</a>${o.void||o.date!==today()||S.mode==='readonly'||S.duty==='delivery'?'':'<button class="btn danger" data-k="void">Void bill</button>'}</div></div>`,d=>{
+   <div class="row"><button class="btn pri" data-k="print">Print</button><button class="btn" data-k="copy">Copy</button><a class="btn grn" target="_blank" rel="noopener" href="${waHref(o.cust&&S.cust[o.cust]&&S.cust[o.cust].phone,receiptText(o))}">WhatsApp</a>${o.void||(o.date!==today()&&!isManagerUnlocked())||S.mode==='readonly'||S.duty==='delivery'?'':'<button class="btn danger" data-k="void">Void bill</button>'}</div></div>`,d=>{
     d.querySelector('[data-k=copy]').onclick=()=>copyText(receiptText(o));d.querySelector('[data-k=print]').onclick=()=>printText(`receipt-${o.date}-${o.no}.pdf`,receiptText(o),'receipt');
-    const v=d.querySelector('[data-k=void]');if(v)v.onclick=()=>{if(o.date!==today()){toast('Only today\'s bills can be voided.');return}if(!isManagerUnlocked()){closeModal();toast(S.role&&!S.settings.managerPin?'Only a manager or the owner can void a bill.':'Voiding needs the manager PIN. Open Reports and unlock with the PIN first.');return}
-      openModal(`<div class="dlg-h"><h2>Void bill ${esc(o.no)}?</h2></div><div class="dlg-b"><p>The bill stays in history marked void and drops out of sales, stock and VAT. Refund ${aed(o.total)} to the customer yourself.</p><label class="field"><span class="lbl">Reason</span><input id="vr" placeholder="e.g. wrong item, customer left"></label></div><div class="dlg-f"><button class="btn" data-close>Keep bill</button><button class="btn pri" id="vg">Void bill</button></div>`,dd=>{
+    const v=d.querySelector('[data-k=void]');if(v)v.onclick=()=>{if(!isManagerUnlocked()){closeModal();toast(S.role&&!S.settings.managerPin?'Only a manager or the owner can void a bill.':'Voiding needs the manager PIN. Open Reports and unlock with the PIN first.');return}
+      openModal(`<div class="dlg-h"><h2>Void bill ${esc(o.no)}?</h2></div><div class="dlg-b"><p>The bill stays in history marked void and drops out of sales, stock and VAT. Refund ${aed(o.total)} to the customer yourself.</p>${o.date!==today()?`<div class="banner" style="cursor:default;white-space:normal;display:block"><b>This bill is from ${dstr(o.date)}.</b> That day's sales${(S.closes[o.date]||{}).closed?`, Z report and day close (expected cash goes down by ${aed(o.pay.cash||0)}, so the cash counted that night will show as extra)`:' and Z report'} change, and Accounts updates that day on its next refresh. If the period is locked in Accounts, the books keep the old figures and show a warning.</div>`:''}<label class="field"><span class="lbl">Reason</span><input id="vr" placeholder="e.g. wrong item, customer left"></label></div><div class="dlg-f"><button class="btn" data-close>Keep bill</button><button class="btn pri" id="vg">Void bill</button></div>`,dd=>{
         dd.querySelector('#vg').onclick=async()=>{const reason=dd.querySelector('#vr').value.trim();if(!reason){toast('Write a reason.');return}
           try{await upsert('orders/'+o._doc,{},{o:{[o.id]:{void:{reason,by:cashier,ts:Date.now()},status:'done'}}});
             if(o.cust&&o.pay.credit)await upsert('cust/'+o.cust,{tx:{}},{tx:{[uid('t')]:{t:'adj',amt:-o.pay.credit,ts:Date.now(),ref:'Void '+o.no}}});
@@ -1644,7 +1644,32 @@ RENDER.setup=function(){const s=S.settings;
   ${teamPanel()}
   <div class="panel stack"><h2>Backup</h2><p class="small muted" style="margin:0">Save a full copy of the menu, stock, customers, staff and the last two months of bills. Restore puts it back into this till's records.</p>
    <div class="row"><button class="btn" data-a="backup">Save backup file</button><label class="btn">Restore from file<input type="file" id="restoreF" accept=".json,application/json" hidden></label></div>
-   <p class="small muted" style="margin:0">Storage: ${S.mode==='local'?'this browser only (demo mode)':'Firebase, shared and synced across your devices'}.</p></div></div>`};
+   <p class="small muted" style="margin:0">Storage: ${S.mode==='local'?'this browser only (demo mode)':'Firebase, shared and synced across your devices'}.</p></div>
+  ${S.role==='owner'||S.mode==='local'?`<div class="panel stack" style="border-color:var(--bad)"><h2>Start for real</h2><p class="small muted" style="margin:0">Finished testing? Clear the test bills, expenses, purchases, day closes, khata history and the test books in Accounts. The menu, recipes, materials, suppliers, staff, team and settings stay.</p>
+   <div class="row"><button class="btn danger" data-a="wipeOpen">Clear test data…</button></div></div>`:''}</div>`};
+/* ---------- clear test data before going live (owner only) ---------- */
+async function wipeData(opt,log){const n={};
+  const delCol=async(col,keep)=>{const q=await DB.collection(col).get();const ids=q.docs.map(d=>d.id).filter(id=>!keep||!keep(id));n[col]=ids.length;
+    for(let i=0;i<ids.length;i+=20)await Promise.all(ids.slice(i,i+20).map(id=>DB.doc(col+'/'+id).delete()));log(`${col}: ${ids.length}`)};
+  if(opt.books){try{await DB.doc('acc/set').delete();for(const c of ['accpos','accj'])await delCol(c);await delCol('acc',id=>id==='coa'||id==='emp')}catch(e){log('Accounts: '+(e.message||e))}}
+  for(const c of ['orders','tickets','weborders','exp','pur','mov','po','close'])await delCol(c);
+  if(opt.cust==='delete'){await delCol('cust');try{await delCol('access');await delCol('members')}catch(e){}}
+  else{const q=await DB.collection('cust').get();for(const d of q.docs){await DB.doc('cust/'+d.id).update({tx:{}})}log(`customers kept, history cleared: ${q.docs.length}`)}
+  if(opt.stock){const items={};invItems().forEach(v=>items[v.id]={qty:0,asOf:Date.now()});await upsert('cfg/inv',{items:{}},{items,soldOut:{}});log('stock set to zero')}
+  try{localStorage.removeItem('wk_cart')}catch(e){}return n}
+function wipeOpen(){openModal(`<div class="dlg-h"><h2>Clear test data</h2><button class="btn ghost" data-close>Cancel</button></div><div class="dlg-b">
+  <p style="margin:0">This permanently deletes, on every device:</p>
+  <ul class="small" style="margin:0;padding-left:18px"><li>all bills, open orders, online orders and token numbers</li><li>expenses, supplier purchases and payments, purchase orders, wastage and stock counts</li><li>day closes, delivery cash handovers and shortages</li></ul>
+  <label class="field"><span class="lbl">Customers</span><select id="wpC"><option value="keep">Keep customers and their order links, clear khata and stamps</option><option value="delete">Delete customers too</option></select></label>
+  <label class="row small"><input type="checkbox" id="wpS" checked> Set all stock quantities to zero (do an opening stock count after)</label>
+  <label class="row small"><input type="checkbox" id="wpB" checked> Clear the test books in Accounts too (chart of accounts and employees stay)</label>
+  <p class="small muted" style="margin:0">Kept: menu, recipes, materials, suppliers, staff, team logins, settings. A backup file is downloaded first.</p>
+  <label class="field"><span class="lbl">Type DELETE to confirm</span><input id="wpT" autocomplete="off"></label><pre id="wpL" class="small muted" style="margin:0;white-space:pre-wrap"></pre></div>
+  <div class="dlg-f"><button class="btn danger" id="wpGo">Clear test data</button></div>`,d=>{d.querySelector('#wpGo').onclick=async()=>{
+   if(d.querySelector('#wpT').value.trim().toUpperCase()!=='DELETE'){toast('Type DELETE to confirm.');return}
+   const b=d.querySelector('#wpGo');b.disabled=true;b.textContent='Clearing…';const L=d.querySelector('#wpL');const log=m=>{L.textContent+=m+'\n'};
+   try{A.backup();await new Promise(r=>setTimeout(r,600));await wipeData({cust:d.querySelector('#wpC').value,stock:d.querySelector('#wpS').checked,books:d.querySelector('#wpB').checked},log);
+     log('Done. Reloading…');toast('Test data cleared');setTimeout(()=>location.reload(),1500)}catch(e){fail(e);b.disabled=false;b.textContent='Clear test data'}}})}
 const ROLES=[['pending','Waiting'],['staff','Staff: sell, kitchen, purchases'],['delivery','Delivery: online deliveries only'],['manager','Manager: everything except team'],['accountant','Accountant: view only'],['disabled','Blocked']];
 function teamPanel(){if(!S.role)return '';const canEdit=S.role==='owner';const me=S.user&&S.user.uid;
   const us=Object.entries(S.users||{}).map(([id,u])=>Object.assign({id},u)).sort((a,b)=>(a.role==='owner'?-1:0)-(b.role==='owner'?-1:0)||(a.name||a.email||'').localeCompare(b.name||b.email||''));
@@ -1661,6 +1686,7 @@ function teamPanel(){if(!S.role)return '';const canEdit=S.role==='owner';const m
 
 /* ---------- actions ---------- */
 const A={
+  wipeOpen:()=>wipeOpen(),
   goAcc:()=>{location.href='accounts.html'},
   codSend:()=>{const ot=cart.ticket&&S.tickets[cart.ticket];if(ot&&ot.cod&&ot.rider){toast('This order is already out with '+ot.rider+'.');return}const da=$('#dAddr'),dp=$('#dPhone');if(da)cart.addr=da.value.trim();if(dp)cart.phone=dp.value.trim();
     if(!cart.rider){toast('Tap who will deliver first.');return}if(!cart.addr&&!cart.phone){toast('Add the address or phone so the delivery person can find the customer.');return}
